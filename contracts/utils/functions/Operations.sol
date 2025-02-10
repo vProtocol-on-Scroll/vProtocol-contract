@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {WormholeUtilities} from "./WormholeUtilities.sol";
+import {AppStorage} from "./AppStorage.sol";
 import {LibGettersImpl} from "../../libraries/LibGetters.sol";
 import {LibDiamond} from "../../libraries/LibDiamond.sol";
 import {Validator} from "../validators/Validator.sol";
@@ -20,7 +20,7 @@ import "../validators/Error.sol";
  *
  * Public write-only functions that allows writing into the state of LendBit
  */
-contract Operations is WormholeUtilities {
+contract Operations is AppStorage {
     using SafeERC20 for IERC20;
 
     /**
