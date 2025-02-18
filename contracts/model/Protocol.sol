@@ -141,19 +141,70 @@ struct YieldStrategy {
 }
 
 /**
+ * @dev Struct to store information about a yield configuration.
+ * @param isInitialized Whether the yield configuration is initialized.
+ * @param rewardToken The address of the reward token.
+ * @param totalStaked The total amount of tokens staked.
+ * @param epochStartTime The timestamp when the epoch started.
+ * @param lastRewardDistribution The timestamp when the last reward distribution occurred.
+ * @param rewardEmissionRate The rate at which rewards are emitted.
+ * @param accumulatedRewardsPerToken The accumulated rewards per token.
+ * @param activeStrategyId The ID of the active yield strategy.
+ * @param lastCompoundingTime The timestamp when the last compounding occurred.
+ * @param compoundingFrequency The frequency of compounding.
+ * @param autoCompoundUsers The addresses of users who have auto-compounded.
+ */
+
+struct YieldConfig {
+    bool isInitialized;
+    address rewardToken;
+    uint256 totalStaked;
+    uint256 epochStartTime;
+    uint256 lastRewardDistribution;
+    uint256 rewardEmissionRate;
+    uint256 accumulatedRewardsPerToken;
+    uint256 activeStrategyId;
+    uint256 lastCompoundingTime;
+    uint256 compoundingFrequency;
+    address[] autoCompoundUsers;
+}
+
+/**
  * @dev Struct to store information about a user's stake in the protocol.
  * @param amount The amount of tokens staked.
  * @param lockStart The timestamp when the stake was locked.
  * @param lockDuration The duration of the stake.
  * @param loyaltyMultiplier The loyalty multiplier for the stake.
  * @param autoCompound Whether the stake is set to auto-compound.
+ * @param isAutoCompoundUser Whether the user is an auto-compounding user.
  */
 struct UserStake {
     uint256 amount;
     uint256 lockStart;
-    uint256 lockDuration;
+    uint256 lockEnd;
     uint256 loyaltyMultiplier;
     bool autoCompound;
+    bool isAutoCompoundUser;
+}
+
+/**
+ * @dev Struct to store information about a user's reward metrics.
+ * @param lastRewardsPerToken The last rewards per token.
+ * @param lastUpdateTimestamp The timestamp of the last update.
+ */
+struct UserRewardMetrics {
+    uint256 lastRewardsPerToken;
+    uint256 lastUpdateTimestamp;
+}
+
+/**
+ * @dev Struct to store information about a boost tier.
+ * @param requiredStake The required stake for the tier.
+ * @param boostPercentage The boost percentage for the tier.
+ */
+struct BoostTier {
+    uint256 requiredStake;
+    uint256 boostPercentage;
 }
 
 /**

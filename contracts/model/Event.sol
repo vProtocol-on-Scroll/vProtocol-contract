@@ -70,10 +70,25 @@ library Event {
         uint256 indexed totalRepayment
     );
 
-    event RewardDistributed(address indexed user, address indexed token, uint256 amount);
+    event BoostTierUpdated(uint256 requiredStake, uint256 boostPercentage);
+
+    event RewardConfigUpdated(uint256 lenderShare, uint256 borrowerShare, uint256 liquidatorShare, uint256 stakerShare);
+
+    event RewardPoolsUpdated(uint256 lenderPool, uint256 borrowerPool, uint256 liquidatorPool, uint256 stakerPool);
+
+    event YieldSystemInitialized(address indexed rewardToken);
+
     event Staked(address indexed user, uint256 amount, uint256 lockPeriod);
+
     event Unstaked(address indexed user, uint256 amount);
+
     event YieldStrategyUpdated(uint256 strategyId, uint256[] allocationWeights);
+
     event CompoundingExecuted(address indexed user, address indexed token, uint256 amount);
+
     event LoyaltyMultiplierUpdated(address indexed user, uint256 multiplier);
+
+    event RewardDistributed(address indexed user, address indexed token, uint256 amount);
+
+    event BoostTiersUpdated(uint256 tiersLength);
 }

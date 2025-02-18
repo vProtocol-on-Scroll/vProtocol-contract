@@ -24,10 +24,18 @@ library LibAppStorage {
         mapping(address => UserStake) userStakes;
         /// @dev yield strategies
         mapping(uint256 strategyId => YieldStrategy strategy) yieldStrategies;
+        /// @dev user rewards
+        mapping(address => uint256) userRewards;
+        /// @dev user reward metrics
+        mapping(address => UserRewardMetrics) userRewardMetrics;
         /// @dev reward accrual
         mapping(address => RewardAccrual) rewardAccruals;
         /// @dev user activity
         mapping(address => UserActivity) userActivities;
+        /// @dev user reward checkpoints
+        mapping(address => uint256) userRewardCheckpoints;
+        /// @dev boost tiers
+        BoostTier[] boostTiers;
         /// @dev reward config
         RewardConfig rewardConfig;
         /// @dev reward pools
@@ -52,5 +60,7 @@ library LibAppStorage {
         address rewardToken;
         /// @dev reward token decimals
         uint8 rewardTokenDecimals;
+        /// @dev yield config
+        YieldConfig yieldConfig;
     }
 }

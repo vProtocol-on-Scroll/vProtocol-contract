@@ -18,15 +18,4 @@ interface IYieldOptimization {
      * @param allocationWeights Array of weights for different asset classes
      */
     function updateStrategy(uint256 strategyId, uint256[] calldata allocationWeights) external;
-
-    /**
-     * @notice Compounds rewards for a user if auto-compound is enabled
-     * @param user Address of the user to compound rewards for
-     */
-    function compoundRewards(address user) external;
-
-    // Events
-    event StrategyUpdated(uint256 strategyId, uint256[] allocationWeights);
-    event Staked(address indexed user, uint256 amount, uint256 duration);
-    event RewardsCompounded(address indexed user, uint256 amount);
 } 
