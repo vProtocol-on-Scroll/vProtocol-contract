@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.0;
+
+import "../model/Protocol.sol";
 
 interface IYieldOptimization {
     /**
@@ -12,10 +14,10 @@ interface IYieldOptimization {
 
     /**
      * @notice Updates the yield strategy allocation weights
-     * @param p2pWeight Weight for P2P lending (in basis points)
-     * @param poolWeight Weight for pool lending (in basis points)
+     * @param strategyId The ID of the strategy to update
+     * @param allocationWeights Array of weights for different asset classes
      */
-    function updateStrategy(uint256 p2pWeight, uint256 poolWeight) external;
+    function updateStrategy(uint256 strategyId, uint256[] calldata allocationWeights) external;
 
     /**
      * @notice Compounds rewards for a user if auto-compound is enabled
@@ -24,7 +26,7 @@ interface IYieldOptimization {
     function compoundRewards(address user) external;
 
     // Events
-    event StrategyUpdated(uint256 p2pWeight, uint256 poolWeight);
+    event StrategyUpdated(uint256 strategyId, uint256[] allocationWeights);
     event Staked(address indexed user, uint256 amount, uint256 duration);
     event RewardsCompounded(address indexed user, uint256 amount);
 } 

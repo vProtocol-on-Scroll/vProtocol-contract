@@ -2,10 +2,12 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import {LibDiamond} from "../libraries/LibDiamond.sol";
 import {IYieldOptimization} from "../interfaces/IYieldOptimization.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "../model/Protocol.sol";
+import "../model/Event.sol";
+import {LibAppStorage} from "../libraries/LibAppStorage.sol";
 
 /**
  * @title YieldOptimizationFacet
@@ -17,26 +19,8 @@ import {IYieldOptimization} from "../interfaces/IYieldOptimization.sol";
 
 contract YieldOptimizationFacet is IYieldOptimization {
     using SafeERC20 for IERC20;
-    using SafeMath for uint256;
 
-    struct YieldStrategy {
-        uint256 p2pAllocationWeight;    // Weight for P2P lending (basis points)
-        uint256 poolAllocationWeight;    // Weight for pool lending (basis points)
-        uint256 lastRebalance;          // Timestamp of last rebalance
-        uint256 historicalApy;          // Historical APY (basis points)
-    }
-
-    struct UserStake {
-        uint256 amount;
-        uint256 lockStart;
-        uint256 lockDuration;
-        uint256 loyaltyMultiplier;      // Stored as basis points (100 = 1x)
-        bool autoCompound;
-    }
-
-    event StrategyUpdated(uint256 p2pWeight, uint256 poolWeight);
-    event Staked(address indexed user, uint256 amount, uint256 duration);
-    event RewardsCompounded(address indexed user, uint256 amount);
+    LibAppStorage.Layout internal s;
 
     /**
      * @dev Fallback function that reverts any calls made to undefined functions.
@@ -62,7 +46,7 @@ contract YieldOptimizationFacet is IYieldOptimization {
         uint256 multiplier = 100 + (duration * 100) / (365 days);
         
         UserStake storage userStake = s.userStakes[msg.sender];
-        userStake.amount += amount;
+        userStake.amount = amount;
         userStake.lockStart = block.timestamp;
         userStake.lockDuration = duration;
         userStake.loyaltyMultiplier = multiplier;
@@ -71,18 +55,25 @@ contract YieldOptimizationFacet is IYieldOptimization {
         // Transfer tokens to contract
         IERC20(s.protocolToken).safeTransferFrom(msg.sender, address(this), amount);
         
-        emit Staked(msg.sender, amount, duration);
+        emit Event.Staked(msg.sender, amount, duration);
     }
 
-    function updateStrategy(uint256 p2pWeight, uint256 poolWeight) external {
+    function updateStrategy(uint256 strategyId, uint256[] calldata allocationWeights) external {
         require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
-        require(p2pWeight + poolWeight == 10000, "Weights must total 100%");
+        
+        YieldStrategy storage strategy = s.yieldStrategies[strategyId];
+        strategy.isActive = true;
+        strategy.allocationWeights = allocationWeights;
+        strategy.lastUpdated = block.timestamp;
+        
+        uint256 totalWeight = 0;
+        for (uint256 i = 0; i < allocationWeights.length; i++) {
+            totalWeight += allocationWeights[i];
+        }
+        require(totalWeight == 10000, "Weights must total 100%");
+        strategy.totalWeight = totalWeight;
 
-        s.currentStrategy.p2pAllocationWeight = p2pWeight;
-        s.currentStrategy.poolAllocationWeight = poolWeight;
-        s.currentStrategy.lastRebalance = block.timestamp;
-
-        emit StrategyUpdated(p2pWeight, poolWeight);
+        emit Event.YieldStrategyUpdated(strategyId, allocationWeights);
     }
 
     function compoundRewards(address user) external {
@@ -94,7 +85,7 @@ contract YieldOptimizationFacet is IYieldOptimization {
 
         userStake.amount += pendingRewards;
         
-        emit RewardsCompounded(user, pendingRewards);
+        emit Event.CompoundingExecuted(user, s.protocolToken, pendingRewards);
     }
 
     // Internal function to calculate pending rewards

@@ -26,6 +26,12 @@ library LibAppStorage {
         mapping(uint16 => uint32) s_chainIdToCCTPDomain;
         /// @dev mapping of id to loanListing
         mapping(uint96 listingId => LoanListing) loanListings;
+        /// @dev user stakes
+        mapping(address => UserStake) userStakes;
+        /// @dev yield strategies
+        mapping(uint256 strategyId => YieldStrategy strategy) yieldStrategies;
+        /// @dev current strategy id
+        uint256 currentStrategyId;
         /// @dev Collection of all colleteral Adresses
         address[] s_collateralToken;
         /// @dev all loanable assets
@@ -34,13 +40,17 @@ library LibAppStorage {
         uint96 requestId;
         /// @dev the number of listings created
         uint96 listingId;
-        /// @dev number of confirmations for wormhole messages
-        uint8 consistencyLevel;
         /// @dev address of the bot that calls the liquidate function
         address botAddress;
         /// @dev uniswap router address
         address swapRouter;
-        /// @dev Cross-Chain Provider
-        Provider provider;
+        /// @dev protocol token
+        address protocolToken;
+        /// @dev reward token
+        address rewardToken;
+        /// @dev reward token decimals
+        uint8 rewardTokenDecimals;
+        /// @dev reward accrual
+        // RewardAccrual rewardAccrual;
     }
 }

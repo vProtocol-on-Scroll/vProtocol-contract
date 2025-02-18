@@ -144,14 +144,14 @@ struct YieldStrategy {
  * @dev Struct to store information about a user's stake in the protocol.
  * @param amount The amount of tokens staked.
  * @param lockStart The timestamp when the stake was locked.
- * @param lockEnd The timestamp when the stake will be unlocked.
+ * @param lockDuration The duration of the stake.
  * @param loyaltyMultiplier The loyalty multiplier for the stake.
  * @param autoCompound Whether the stake is set to auto-compound.
  */
 struct UserStake {
     uint256 amount;
     uint256 lockStart;
-    uint256 lockEnd;
+    uint256 lockDuration;
     uint256 loyaltyMultiplier;
     bool autoCompound;
 }
