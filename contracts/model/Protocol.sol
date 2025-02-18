@@ -110,13 +110,65 @@ struct ActionPayload {
     uint256 max_amount;
 }
 
- 
- struct CollateralConfig {
-        bool isEnabled;
-        uint256 ltv;
-        uint256 liquidationThreshold;
-        uint256 liquidationPenalty;
-    }
+/**
+ * @dev Struct to store information about a collateral configuration.
+ * @param isEnabled Whether the collateral is enabled for lending.
+ * @param ltv Loan-to-value ratio (in basis points).
+ * @param liquidationThreshold Liquidation threshold (in basis points).
+ * @param liquidationPenalty Liquidation penalty (in basis points).
+ */
+struct CollateralConfig {
+    bool isEnabled;
+    uint256 ltv;
+    uint256 liquidationThreshold;
+    uint256 liquidationPenalty;
+}
+
+/**
+ * @dev Struct to store information about a yield strategy.
+ * @param isActive Whether the yield strategy is active.
+ * @param allocationWeights Array of weights for different asset classes.
+ * @param totalWeight Total weight of all allocation weights.
+ * @param lastUpdated Timestamp of the last update.
+ * @param performanceScore Historical performance score.
+ */
+struct YieldStrategy {
+    bool isActive;
+    uint256[] allocationWeights; // weights in basis points
+    uint256 totalWeight;
+    uint256 lastUpdated;
+    uint256 performanceScore; // historical performance in basis points
+}
+
+/**
+ * @dev Struct to store information about a user's stake in the protocol.
+ * @param amount The amount of tokens staked.
+ * @param lockStart The timestamp when the stake was locked.
+ * @param lockEnd The timestamp when the stake will be unlocked.
+ * @param loyaltyMultiplier The loyalty multiplier for the stake.
+ * @param autoCompound Whether the stake is set to auto-compound.
+ */
+struct UserStake {
+    uint256 amount;
+    uint256 lockStart;
+    uint256 lockEnd;
+    uint256 loyaltyMultiplier;
+    bool autoCompound;
+}
+
+/**
+ * @dev Struct to store information about a reward accrual.
+ * @param lastAccrualTimestamp The timestamp of the last reward accrual.
+ * @param accumulatedRewards The total accumulated rewards.
+ * @param rewardsPerToken The rewards per token.
+ * @param totalStaked The total amount of tokens staked.
+ */
+struct RewardAccrual {
+    uint256 lastAccrualTimestamp;
+    uint256 accumulatedRewards;
+    uint256 rewardsPerToken;
+    uint256 totalStaked;
+}
 
 /**
  * @dev Enum representing the status of a loan request.
