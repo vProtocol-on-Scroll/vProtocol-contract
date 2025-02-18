@@ -171,6 +171,66 @@ struct RewardAccrual {
 }
 
 /**
+ * @dev Struct to store information about a reward configuration.
+ * @param lenderShare The share of rewards for lenders.
+ * @param borrowerShare The share of rewards for borrowers.
+ * @param liquidatorShare The share of rewards for liquidators.
+ * @param stakerShare The share of rewards for stakers.
+ * @param lenderRewardRate The reward rate for lenders.
+ * @param borrowerRewardRate The reward rate for borrowers.
+ * @param liquidatorRewardRate The reward rate for liquidators.
+ * @param stakerRewardRate The reward rate for stakers.
+ */
+struct RewardConfig {
+    uint256 lenderShare;      // basis points
+    uint256 borrowerShare;    // basis points
+    uint256 liquidatorShare;  // basis points
+    uint256 stakerShare;      // basis points
+    uint256 lenderRewardRate;    // basis points
+    uint256 borrowerRewardRate;  // basis points
+    uint256 liquidatorRewardRate; // basis points
+    uint256 stakerRewardRate;    // basis points
+}
+
+/**
+ * @dev Struct to store information about reward pools.
+ * @param lenderPool The amount of rewards for lenders.
+ * @param borrowerPool The amount of rewards for borrowers.
+ * @param liquidatorPool The amount of rewards for liquidators.
+ * @param stakerPool The amount of rewards for stakers.
+ */
+struct RewardPools {
+    uint256 lenderPool;
+    uint256 borrowerPool;
+    uint256 liquidatorPool;
+    uint256 stakerPool;
+}
+
+/**
+ * @dev Struct to store information about user activity.
+ * @param totalLendingAmount The total amount of lending.
+ * @param totalBorrowingAmount The total amount of borrowing.
+ * @param totalLiquidationAmount The total amount of liquidation.
+ */
+struct UserActivity {
+    uint256 totalLendingAmount;
+    uint256 totalBorrowingAmount;
+    uint256 totalLiquidationAmount;
+    uint256 lastLenderRewardUpdate;
+    uint256 lastBorrowerRewardUpdate;
+}
+
+/**
+ * @dev Enum representing the type of reward pool.
+ */
+enum PoolType {
+    LENDER,
+    BORROWER,
+    LIQUIDATOR,
+    STAKER
+}
+
+/**
  * @dev Enum representing the status of a loan request.
  * OPEN - The loan request is open and waiting for a lender.
  * SERVICED - The loan request has been accepted and is currently serviced by a lender.

@@ -18,18 +18,20 @@ library LibAppStorage {
         mapping(uint96 requestId => Request) request;
         /// @dev mapping a requestId to the collaterals used in a request
         mapping(uint96 requestId => mapping(address => uint256)) s_idToCollateralTokenAmount;
-        /// @dev allowlist for spoke contracts
-        mapping(uint16 => address) s_spokeProtocols;
-        /// @dev wormhole message hashes
-        mapping(bytes32 => bool) s_consumedMessages;
-        /// @dev cctp domains
-        mapping(uint16 => uint32) s_chainIdToCCTPDomain;
         /// @dev mapping of id to loanListing
         mapping(uint96 listingId => LoanListing) loanListings;
         /// @dev user stakes
         mapping(address => UserStake) userStakes;
         /// @dev yield strategies
         mapping(uint256 strategyId => YieldStrategy strategy) yieldStrategies;
+        /// @dev reward accrual
+        mapping(address => RewardAccrual) rewardAccruals;
+        /// @dev user activity
+        mapping(address => UserActivity) userActivities;
+        /// @dev reward config
+        RewardConfig rewardConfig;
+        /// @dev reward pools
+        RewardPools rewardPools;
         /// @dev current strategy id
         uint256 currentStrategyId;
         /// @dev Collection of all colleteral Adresses
@@ -50,7 +52,5 @@ library LibAppStorage {
         address rewardToken;
         /// @dev reward token decimals
         uint8 rewardTokenDecimals;
-        /// @dev reward accrual
-        // RewardAccrual rewardAccrual;
     }
 }
