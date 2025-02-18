@@ -223,6 +223,8 @@ struct RewardAccrual {
 
 /**
  * @dev Struct to store information about a reward configuration.
+ * @param initialized Whether the reward configuration is initialized.
+ * @param rewardsPaused Whether the rewards are paused.
  * @param lenderShare The share of rewards for lenders.
  * @param borrowerShare The share of rewards for borrowers.
  * @param liquidatorShare The share of rewards for liquidators.
@@ -231,16 +233,20 @@ struct RewardAccrual {
  * @param borrowerRewardRate The reward rate for borrowers.
  * @param liquidatorRewardRate The reward rate for liquidators.
  * @param stakerRewardRate The reward rate for stakers.
+ * @param referralRewardRate The reward rate for referrals.
  */
 struct RewardConfig {
-    uint256 lenderShare;      // basis points
-    uint256 borrowerShare;    // basis points
-    uint256 liquidatorShare;  // basis points
-    uint256 stakerShare;      // basis points
-    uint256 lenderRewardRate;    // basis points
-    uint256 borrowerRewardRate;  // basis points
-    uint256 liquidatorRewardRate; // basis points
-    uint256 stakerRewardRate;    // basis points
+    bool initialized;
+    bool rewardsPaused;
+    uint256 lenderShare;
+    uint256 borrowerShare;
+    uint256 liquidatorShare;
+    uint256 stakerShare;
+    uint256 lenderRewardRate;
+    uint256 borrowerRewardRate;
+    uint256 liquidatorRewardRate;
+    uint256 stakerRewardRate;
+    uint256 referralRewardRate;
 }
 
 /**

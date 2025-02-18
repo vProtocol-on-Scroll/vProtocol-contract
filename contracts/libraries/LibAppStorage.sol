@@ -34,6 +34,8 @@ library LibAppStorage {
         mapping(address => UserActivity) userActivities;
         /// @dev user reward checkpoints
         mapping(address => uint256) userRewardCheckpoints;
+        /// @dev referral rewards
+        mapping(address => uint256) referralRewards;
         /// @dev boost tiers
         BoostTier[] boostTiers;
         /// @dev reward config

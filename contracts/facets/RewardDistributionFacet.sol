@@ -14,6 +14,30 @@ contract RewardDistributionFacet is IRewardDistribution {
 
     LibAppStorage.Layout internal s;
 
+
+    function initializeRewardDistribution(address rewardToken) external {
+        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+        require(rewardToken != address(0), "Invalid reward token");
+        require(!s.rewardConfig.initialized, "Already initialized");
+        
+        s.protocolToken = rewardToken;
+        
+        // Set default reward configuration
+        s.rewardConfig.lenderShare = 4000;    // 40%
+        s.rewardConfig.borrowerShare = 2000;  // 20%
+        s.rewardConfig.liquidatorShare = 1000; // 10%
+        s.rewardConfig.stakerShare = 3000;   // 30%
+        
+        s.rewardConfig.lenderRewardRate = 500;      // 5% APR
+        s.rewardConfig.borrowerRewardRate = 300;    // 3% APR
+        s.rewardConfig.liquidatorRewardRate = 500;  // 5% of liquidated amount
+        s.rewardConfig.stakerRewardRate = 1000;     // 10% APR
+        
+        s.rewardConfig.initialized = true;
+        
+        emit Event.RewardSystemInitialized(rewardToken);
+    }
+
     
     /**
      * @notice Distributes protocol fees across different reward pools
@@ -35,7 +59,7 @@ contract RewardDistributionFacet is IRewardDistribution {
         s.rewardPools.liquidatorPool += liquidatorPool;
         s.rewardPools.stakerPool += stakerPool;
 
-        emit PoolsUpdated(lenderPool, borrowerPool, liquidatorPool, stakerPool);
+        emit Event.PoolsUpdated(lenderPool, borrowerPool, liquidatorPool, stakerPool);
     }
 
     /**
@@ -88,7 +112,7 @@ contract RewardDistributionFacet is IRewardDistribution {
         s.rewardConfig.liquidatorShare = liquidatorShare;
         s.rewardConfig.stakerShare = stakerShare;
 
-        emit RewardConfigUpdated(lenderShare, borrowerShare, liquidatorShare, stakerShare);
+        emit Event.RewardConfigUpdated(lenderShare, borrowerShare, liquidatorShare, stakerShare);
     }
 
     /**
@@ -117,7 +141,11 @@ contract RewardDistributionFacet is IRewardDistribution {
         uint256 timePassed = block.timestamp - activity.lastLenderRewardUpdate;
         uint256 lendingAmount = activity.totalLendingAmount;
         
-        return (lendingAmount * timePassed * s.rewardConfig.lenderRewardRate) / (365 days * 10000);
+        uint256 baseReward = (lendingAmount * timePassed * s.rewardConfig.lenderRewardRate) / (365 days * 10000);
+        
+        // Apply boost
+        uint256 boost = getUserBoost(user);
+        return (baseReward * boost) / 10000;
     }
 
     function calculateBorrowerRewards(address user) internal view returns (uint256) {
@@ -156,4 +184,82 @@ contract RewardDistributionFacet is IRewardDistribution {
         }
         // Staker rewards are handled separately in the YieldOptimizationFacet
     }
+
+    function pauseRewards() external {
+        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+        s.rewardConfig.rewardsPaused = true;
+        emit Event.RewardsPaused();
+    }
+
+    function unpauseRewards() external {
+        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+        s.rewardConfig.rewardsPaused = false;
+        emit Event.RewardsUnpaused();
+    }
+
+    function addToRewardPool(PoolType poolType, uint256 amount) external {
+        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+        require(amount > 0, "Amount must be greater than 0");
+        
+        if (poolType == PoolType.LENDER) {
+            s.rewardPools.lenderPool += amount;
+        } else if (poolType == PoolType.BORROWER) {
+            s.rewardPools.borrowerPool += amount;
+        } else if (poolType == PoolType.LIQUIDATOR) {
+            s.rewardPools.liquidatorPool += amount;
+        } else if (poolType == PoolType.STAKER) {
+            s.rewardPools.stakerPool += amount;
+        }
+        
+        emit Event.PoolBalanceAdded(poolType, amount);
+    }
+
+    function getUserBoost(address user) public view returns (uint256) {
+        // Get user's stake amount
+        UserStake storage stake = s.userStakes[user];
+        if (stake.amount == 0) {
+            return 10000; // No boost (100%)
+        }
+    
+        // Find applicable tier
+        for (uint256 i = s.boostTiers.length; i > 0; i--) {
+            if (stake.amount >= s.boostTiers[i-1].requiredStake) {
+                return s.boostTiers[i-1].boostPercentage;
+            }
+        }
+        
+        return 10000; // Default to no boost
+    }
+
+    function addReferralReward(address referrer, address referee, uint256 amount) external {
+        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+        
+        uint256 referralReward = (amount * s.rewardConfig.referralRewardRate) / 10000;
+        s.referralRewards[referrer] += referralReward;
+        
+        emit Event.ReferralRewardAdded(referrer, referee, referralReward);
+    }
+
+    function calculateReferralRewards(address user) internal view returns (uint256) {
+        return s.referralRewards[user];
+    }
+
+    function getPendingRewards(address user) external view returns (
+        uint256 lenderRewards,
+        uint256 borrowerRewards, 
+        uint256 liquidatorRewards,
+        uint256 stakerRewards,
+        uint256 referralRewards,
+        uint256 totalRewards
+    ) {
+        lenderRewards = calculateLenderRewards(user);
+        borrowerRewards = calculateBorrowerRewards(user);
+        liquidatorRewards = calculateLiquidatorRewards(user);
+        stakerRewards = calculateStakerRewards(user); 
+        referralRewards = s.referralRewards[user];
+        
+        totalRewards = lenderRewards + borrowerRewards + liquidatorRewards + 
+                    stakerRewards + referralRewards;
+    }
+
 }
