@@ -6,7 +6,7 @@ import {Getters} from "../utils/functions/Getters.sol";
 
 /**
  * @title ProtocolFacet
- * @author Lendbit Finance
+ * @author Five Protocol
  *
  * @dev Core contract of the Lending protocol that integrates operations and data access functions.
  * This contract combines essential functionalities from `Operations` and `Getters`, enabling

@@ -110,6 +110,14 @@ struct ActionPayload {
     uint256 max_amount;
 }
 
+ 
+ struct CollateralConfig {
+        bool isEnabled;
+        uint256 ltv;
+        uint256 liquidationThreshold;
+        uint256 liquidationPenalty;
+    }
+
 /**
  * @dev Enum representing the status of a loan request.
  * OPEN - The loan request is open and waiting for a lender.
