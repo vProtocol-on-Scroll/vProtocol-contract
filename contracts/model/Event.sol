@@ -6,23 +6,20 @@ library Event {
         address indexed _borrower,
         uint96 indexed requestId,
         uint _amount,
-        uint16 _interest,
-        uint16 indexed _chainId
+        uint16 _interest
     );
 
     event RequestServiced(
         uint96 indexed _requestId,
         address indexed _lender,
         address indexed _borrower,
-        uint256 _amount,
-        uint16 _chainId
+        uint256 _amount
     );
     event RequestClosed(uint96 indexed _requestId, address indexed _borrower);
     event CollateralWithdrawn(
         address indexed sender,
         address indexed _tokenCollateralAddress,
-        uint256 _amount,
-        uint16 _chainId
+        uint256 _amount
     );
     event UpdatedCollateralTokens(address indexed sender, uint8 newTokensCount);
     event AcceptedListedAds(
@@ -31,12 +28,7 @@ library Event {
         uint256 indexed amount,
         uint8 adStatus
     );
-    event LoanRepayment(
-        address indexed sender,
-        uint96 id,
-        uint256 amount,
-        uint16 indexed chainId
-    );
+    event LoanRepayment(address indexed sender, uint96 id, uint256 amount);
     event UpdateLoanableToken(
         address indexed _token,
         address _priceFeed,
@@ -45,8 +37,7 @@ library Event {
     event CollateralDeposited(
         address indexed _sender,
         address indexed _token,
-        uint256 _value,
-        uint16 indexed _chainId
+        uint256 _value
     );
 
     event withdrawnAdsToken(
@@ -60,67 +51,12 @@ library Event {
         uint96 indexed listingId,
         address indexed sender,
         address indexed tokenAddress,
-        uint256 amount,
-        uint16 chainId
+        uint256 amount
     );
 
     event RequestLiquidated(
         uint96 indexed requestId,
         address indexed lenderAddress,
         uint256 indexed totalRepayment
-    );
-
-    // spoke event
-    event Spoke__DepositCollateral(
-        uint16 indexed _targetChain,
-        uint256 indexed amount,
-        address indexed assetAdrress,
-        address assetAdd
-    );
-
-    event Spoke__CreateRequest(
-        uint16 indexed _targetChain,
-        uint256 indexed amount,
-        address indexed assetAdrress,
-        address _loanAddress
-    );
-    event Spoke__ServiceRequest(
-        uint16 indexed _targetChain,
-        uint96 indexed _requestId,
-        address indexed sender,
-        address _tokenAddress
-    );
-
-    event Spoke__WithrawnCollateral(
-        uint16 indexed _targetChain,
-        address indexed _targetAddress,
-        address indexed sender,
-        address _tokenCollateralAddress
-    );
-
-    event Spoke__createLoanListing(
-        uint16 indexed _targetChain,
-        uint256 indexed _amount,
-        address indexed sender,
-        address _assetAddress
-    );
-
-    event Spoke__RepayLoan(
-        uint16 indexed _targetChain,
-        uint96 indexed_requestId,
-        address indexed sender,
-        uint256 _amount
-    );
-
-    event Spoke__requestLoanFromListing(
-        uint16 indexed _targetChain,
-        uint96 indexed_requestId,
-        address indexed sender,
-        uint256 indexed _amount
-    );
-
-    event ProviderRegistered(
-        uint16 indexed _chainId,
-        address indexed spokeAddr
     );
 }

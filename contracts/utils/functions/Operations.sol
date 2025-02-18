@@ -83,8 +83,7 @@ contract Operations is AppStorage {
         emit Event.CollateralDeposited(
             msg.sender,
             _tokenCollateralAddress,
-            _amountOfCollateral,
-            _appStorage.provider.chainId
+            _amountOfCollateral
         );
     }
 
@@ -94,7 +93,8 @@ contract Operations is AppStorage {
      *
      * @param _amount The amount of loan requested by the borrower.
      * @param _interest The interest rate for the loan.
-     * @param _returnDate The expected return date for the loan.
+     * @param _returnDuration The expected return date for the loan.
+     * @param _expirationDate The expiration date of lending request if not serviced
      * @param _loanCurrency The token address for the currency in which the loan is requested.
      *
      * Requirements:
@@ -109,9 +109,10 @@ contract Operations is AppStorage {
      * Emits a `RequestCreated` event on successful request creation.
      */
     function createLendingRequest(
-        uint128 _amount,
+        uint256 _amount,
         uint16 _interest,
-        uint256 _returnDate,
+        uint256 _returnDuration,
+        uint256 _expirationDate,
         address _loanCurrency
     ) external {
         // Validate that the loan amount is greater than zero
@@ -122,8 +123,14 @@ contract Operations is AppStorage {
             revert Protocol__TokenNotLoanable();
         }
 
+        if (_expirationDate < block.timestamp) {
+            revert Protocol__DateMustBeInFuture();
+        }
+
+        uint256 _duration = _returnDuration - block.timestamp;
+
         // Ensure the return date is at least 1 day in the future
-        if ((_returnDate - block.timestamp) < 1 days) {
+        if (_duration < 1 days) {
             revert Protocol__DateMustBeInFuture();
         }
 
@@ -172,16 +179,15 @@ contract Operations is AppStorage {
         _newRequest.author = msg.sender;
         _newRequest.amount = _amount;
         _newRequest.interest = _interest;
-        _newRequest.returnDate = _returnDate;
+        _newRequest.returnDate = _returnDuration;
+        _newRequest.expirationDate = _expirationDate;
         _newRequest.totalRepayment = Utils.calculateLoanInterest(
-            _returnDate,
             _amount,
             _interest
         );
         _newRequest.loanRequestAddr = _loanCurrency;
         _newRequest.collateralTokens = _collateralTokens;
         _newRequest.status = Status.OPEN;
-        _newRequest.chainId = _appStorage.provider.chainId;
 
         // Calculate the amount of collateral to lock based on the loan value
         uint256 collateralToLock = Utils.calculateColateralToLock(
@@ -221,8 +227,7 @@ contract Operations is AppStorage {
             msg.sender,
             _appStorage.requestId,
             _amount,
-            _interest,
-            _appStorage.provider.chainId
+            _interest
         );
     }
 
@@ -252,14 +257,11 @@ contract Operations is AppStorage {
         // Ensure the request status is open and has not expired
         if (_foundRequest.status != Status.OPEN)
             revert Protocol__RequestNotOpen();
+        if (_foundRequest.expirationDate <= block.timestamp)
+            revert Protocol__RequestNotOpen();
         if (_foundRequest.loanRequestAddr != _tokenAddress)
             revert Protocol__InvalidToken();
-        if (_foundRequest.author == msg.sender) {
-            revert Protocol__CantFundSelf();
-        }
-        if (_foundRequest.returnDate <= block.timestamp) {
-            revert Protocol__RequestExpired();
-        }
+        if (_foundRequest.author == msg.sender) revert Protocol__CantFundSelf();
 
         // Update lender and request status to indicate servicing
         _foundRequest.lender = msg.sender;
@@ -292,7 +294,6 @@ contract Operations is AppStorage {
         // Calculate the total repayment amount including interest
         uint256 _totalRepayment = amountToLend +
             Utils.calculateLoanInterest(
-                _foundRequest.returnDate,
                 _foundRequest.amount,
                 _foundRequest.interest
             );
@@ -343,13 +344,20 @@ contract Operations is AppStorage {
             if (!sent) revert Protocol__TransferFailed();
         }
 
+        if (_tokenAddress == Constants.NATIVE_TOKEN) {
+            if (msg.value > amountToLend) {
+                uint256 _refund = msg.value - amountToLend;
+                (bool sent, ) = payable(msg.sender).call{value: _refund}("");
+                if (!sent) revert Protocol__TransferFailed();
+            }
+        }
+
         // Emit an event indicating successful servicing of the request
         emit Event.RequestServiced(
             _requestId,
             msg.sender,
             _foundRequest.author,
-            amountToLend,
-            _appStorage.provider.chainId
+            amountToLend
         );
     }
 
@@ -407,8 +415,7 @@ contract Operations is AppStorage {
         emit Event.CollateralWithdrawn(
             msg.sender,
             _tokenCollateralAddress,
-            _amount,
-            _appStorage.provider.chainId
+            _amount
         );
     }
 
@@ -598,7 +605,7 @@ contract Operations is AppStorage {
      * @param _amount The total amount being loaned.
      * @param _min_amount The minimum amount a lender can fund.
      * @param _max_amount The maximum amount a lender can fund.
-     * @param _returnDate The date by which the loan should be repaid.
+     * @param _returnDuration The date by which the loan should be repaid.
      * @param _interest The interest rate to be applied on the loan.
      * @param _loanCurrency The currency in which the loan is issued (token address).
      *
@@ -614,7 +621,7 @@ contract Operations is AppStorage {
         uint256 _amount,
         uint256 _min_amount,
         uint256 _max_amount,
-        uint256 _returnDate,
+        uint256 _returnDuration,
         uint16 _interest,
         address _loanCurrency
     ) external payable {
@@ -665,18 +672,16 @@ contract Operations is AppStorage {
         _newListing.min_amount = _min_amount;
         _newListing.max_amount = _max_amount;
         _newListing.interest = _interest;
-        _newListing.returnDate = _returnDate;
+        _newListing.returnDuration = _returnDuration - block.timestamp;
         _newListing.tokenAddress = _loanCurrency;
         _newListing.listingStatus = ListingStatus.OPEN;
-        _newListing.chainId = _appStorage.provider.chainId;
 
         // Emit an event to notify that a new loan listing has been created
         emit Event.LoanListingCreated(
             _appStorage.listingId,
             msg.sender,
             _loanCurrency,
-            _amount,
-            _appStorage.provider.chainId
+            _amount
         );
     }
 
@@ -760,16 +765,14 @@ contract Operations is AppStorage {
         _newRequest.lender = _listing.author;
         _newRequest.amount = _amount;
         _newRequest.interest = _listing.interest;
-        _newRequest.returnDate = _listing.returnDate;
+        _newRequest.returnDate = block.timestamp + _listing.returnDuration;
         _newRequest.totalRepayment = Utils.calculateLoanInterest(
-            _listing.returnDate,
             _amount,
             _listing.interest
         );
         _newRequest.loanRequestAddr = _listing.tokenAddress;
         _newRequest.collateralTokens = _collateralTokens;
         _newRequest.status = Status.SERVICED;
-        _newRequest.chainId = _appStorage.provider.chainId;
 
         // Calculate collateral to lock for each token, proportional to its USD value
         uint256 collateralToLock = Utils.calculateColateralToLock(
@@ -825,15 +828,13 @@ contract Operations is AppStorage {
             msg.sender,
             _appStorage.requestId,
             _amount,
-            _listing.interest,
-            _appStorage.provider.chainId
+            _listing.interest
         );
         emit Event.RequestServiced(
             _newRequest.requestId,
             _newRequest.lender,
             _newRequest.author,
-            _amount,
-            _listing.chainId
+            _amount
         );
     }
 
@@ -926,12 +927,7 @@ contract Operations is AppStorage {
         }
 
         // Emit event to notify of loan repayment
-        emit Event.LoanRepayment(
-            msg.sender,
-            _requestId,
-            _amount,
-            _appStorage.provider.chainId
-        );
+        emit Event.LoanRepayment(msg.sender, _requestId, _amount);
     }
 
     /**

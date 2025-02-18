@@ -15,7 +15,7 @@ import {Getters} from "../utils/functions/Getters.sol";
  * This contract acts as a primary interface for protocol interactions, while `Operations`
  * contains core operational functions, and `Getters` allows querying data from the protocol.
  */
-contract ProtocolFacet is Operations, Getters {
+contract P2pFacet is Operations, Getters {
     /**
      * @dev Fallback function that reverts any calls made to undefined functions.
      * This ensures the protocol does not accept or process unsupported function calls.
@@ -23,7 +23,7 @@ contract ProtocolFacet is Operations, Getters {
      * Reverts with "ProtocolFacet: fallback" when an undefined function is called.
      */
     fallback() external {
-        revert("ProtocolFacet: fallback");
+        revert("P2pFacet: fallback");
     }
 
     receive() external payable {}

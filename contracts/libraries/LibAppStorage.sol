@@ -18,12 +18,6 @@ library LibAppStorage {
         mapping(uint96 requestId => Request) request;
         /// @dev mapping a requestId to the collaterals used in a request
         mapping(uint96 requestId => mapping(address => uint256)) s_idToCollateralTokenAmount;
-        /// @dev allowlist for spoke contracts
-        mapping(uint16 => address) s_spokeProtocols;
-        /// @dev wormhole message hashes
-        mapping(bytes32 => bool) s_consumedMessages;
-        /// @dev cctp domains
-        mapping(uint16 => uint32) s_chainIdToCCTPDomain;
         /// @dev mapping of id to loanListing
         mapping(uint96 listingId => LoanListing) loanListings;
         /// @dev Collection of all colleteral Adresses
@@ -34,13 +28,9 @@ library LibAppStorage {
         uint96 requestId;
         /// @dev the number of listings created
         uint96 listingId;
-        /// @dev number of confirmations for wormhole messages
-        uint8 consistencyLevel;
         /// @dev address of the bot that calls the liquidate function
         address botAddress;
         /// @dev uniswap router address
         address swapRouter;
-        /// @dev Cross-Chain Provider
-        Provider provider;
     }
 }
