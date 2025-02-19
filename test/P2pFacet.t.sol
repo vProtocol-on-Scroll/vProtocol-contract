@@ -12,7 +12,10 @@ import {P2pFacet} from "../contracts/facets/P2pFacet.sol";
 import "../contracts/model/Protocol.sol";
 import "../contracts/utils/validators/Error.sol";
 
-contract P2pFacetTest is Test, IDiamondCut {
+import {LibGettersImpl} from "../contracts/libraries/LibGetters.sol";
+import {AppStorage} from "../contracts/utils/functions/AppStorage.sol";
+
+contract P2pFacetTest is Test, IDiamondCut, AppStorage {
     //contract types of facets to be deployed
     Diamond diamond;
     DiamondCutFacet dCutFacet;
@@ -69,8 +72,14 @@ contract P2pFacetTest is Test, IDiamondCut {
         //call a function
         DiamondLoupeFacet(address(diamond)).facetAddresses();
 
+        // ETH
         tokens.push(address(1));
         priceFeeds.push(0x59F1ec1f10bD7eD9B938431086bC1D9e233ECf41);
+        // priceFeeds.push(0x6bF14CB0A831078629D993FDeBcB182b21A8774C);
+
+        // USDC
+        // tokens.push()
+        // tokens.push(0xFadA8b0737D4A3AE7118918B7E69E689034c0127)
 
         diamond.initialize(tokens, priceFeeds);
 
@@ -177,11 +186,41 @@ contract P2pFacetTest is Test, IDiamondCut {
         assertEq(uint8(_requestAfterClosing.status), uint8(Status.CLOSED));
     }
 
+    function testStalePriceFeed() public {
+        _depositCollateral();
+        _createLendingRequest();
+
+        P2pFacet p2pContract = P2pFacet(payable(diamond));
+
+        vm.warp(block.timestamp + 4 hours);
+
+        switchSigner(_user2);
+        vm.expectRevert(Protocol__PriceStale.selector);
+        p2pContract.serviceRequest{value: 7 ether}(1, tokens[0]);
+    }
+
     function _depositCollateral() public {
         switchSigner(_user1);
         P2pFacet p2pContract = P2pFacet(payable(diamond));
 
         p2pContract.depositCollateral{value: 10 ether}(tokens[0], 10 ether);
+    }
+
+    function _createLendingRequest() public {
+        P2pFacet p2pContract = P2pFacet(payable(diamond));
+        uint256 _amount = 7 ether;
+        uint16 _interest = 500;
+        uint256 _returnDuration = block.timestamp + 30 days;
+        uint256 _expirationDate = block.timestamp + 1 days;
+        address _loanCurrency = tokens[0];
+
+        p2pContract.createLendingRequest(
+            _amount,
+            _interest,
+            _returnDuration,
+            _expirationDate,
+            _loanCurrency
+        );
     }
 
     function mkaddr(string memory name) public returns (address) {

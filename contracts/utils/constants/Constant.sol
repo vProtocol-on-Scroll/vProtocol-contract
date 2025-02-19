@@ -13,4 +13,5 @@ library Constants {
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
     uint8 constant CONSISTENCY_LEVEL_FINALIZED = 15;
     uint256 constant GAS_LIMIT = 400_000;
+    uint256 constant PRICE_STALE_THRESHOLD = 3 * 3600; // 3 hours
 }
