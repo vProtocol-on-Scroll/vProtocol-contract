@@ -50,6 +50,7 @@ error Protocol__InvalidCaller();
 error Protocol__InvalidAction();
 error Protocol__InvalidHash();
 error Protocol__PriceStale();
+error Protocol__P2pIsStopped();
 
 // Error From Wormhole
 error Protocol__NotAnEvmAddress(bytes32);

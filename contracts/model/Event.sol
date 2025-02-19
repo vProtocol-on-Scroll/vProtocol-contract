@@ -59,4 +59,6 @@ library Event {
         address indexed lenderAddress,
         uint256 indexed totalRepayment
     );
+
+    event P2pFailSafeStatus(bool status);
 }

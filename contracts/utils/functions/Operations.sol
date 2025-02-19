@@ -43,6 +43,8 @@ contract Operations is AppStorage {
         address _tokenCollateralAddress,
         uint256 _amountOfCollateral
     ) external payable {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         // Validate the input parameters: `_amountOfCollateral` must be greater than zero,
         // and `_tokenCollateralAddress` must have a valid price feed (non-zero address).
         Validator._valueMoreThanZero(
@@ -115,6 +117,8 @@ contract Operations is AppStorage {
         uint256 _expirationDate,
         address _loanCurrency
     ) external {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         // Validate that the loan amount is greater than zero
         Validator._moreThanZero(_amount);
 
@@ -248,6 +252,8 @@ contract Operations is AppStorage {
         uint96 _requestId,
         address _tokenAddress
     ) external payable {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         // Validate if native token is being used and msg.value is non-zero
         Validator._nativeMoreThanZero(_tokenAddress, msg.value);
 
@@ -377,6 +383,8 @@ contract Operations is AppStorage {
         address _tokenCollateralAddress,
         uint128 _amount
     ) external {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         // Validate that the token is allowed and the amount is greater than zero
         Validator._isTokenAllowed(
             _appStorage.s_priceFeeds[_tokenCollateralAddress]
@@ -534,6 +542,9 @@ contract Operations is AppStorage {
      * Emits a `withdrawnAdsToken` event indicating the author, listing ID, status, and amount withdrawn.
      */
     function closeListingAd(uint96 _listingId) external {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
+
         // Retrieve the loan listing associated with the given listing ID
         LoanListing storage _newListing = _appStorage.loanListings[_listingId];
 
@@ -583,6 +594,9 @@ contract Operations is AppStorage {
      * Emits a `RequestClosed` event indicating the request ID and the author of the request.
      */
     function closeRequest(uint96 _requestId) external {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
+
         // Retrieve the lending request associated with the given request ID
         Request storage _foundRequest = _appStorage.request[_requestId];
 
@@ -625,6 +639,8 @@ contract Operations is AppStorage {
         uint16 _interest,
         address _loanCurrency
     ) external payable {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         // Validate that the amount is greater than zero and that a value has been sent if using native token
         Validator._valueMoreThanZero(_amount, _loanCurrency, msg.value);
         Validator._moreThanZero(_amount);
@@ -700,6 +716,8 @@ contract Operations is AppStorage {
      * - `RequestServiced` when the loan request is successfully serviced.
      */
     function requestLoanFromListing(uint96 _listingId, uint256 _amount) public {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         Validator._moreThanZero(_amount);
 
         LoanListing storage _listing = _appStorage.loanListings[_listingId];
@@ -853,6 +871,8 @@ contract Operations is AppStorage {
      * - `LoanRepayment` upon successful repayment.
      */
     function repayLoan(uint96 _requestId, uint256 _amount) external payable {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         Validator._moreThanZero(_amount);
 
         Request storage _request = _appStorage.request[_requestId];
@@ -942,6 +962,8 @@ contract Operations is AppStorage {
      * - `RequestLiquidated` after successfully liquidating the collateral and transferring the repayment.
      */
     function liquidateUserRequest(uint96 requestId) external {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         Validator._onlyBot(_appStorage.botAddress, msg.sender);
 
         Request memory _activeRequest = _appStorage.request[requestId];
@@ -1018,6 +1040,8 @@ contract Operations is AppStorage {
         uint256 collateralAmount,
         address loanCurrency
     ) public returns (uint256[] memory loanCurrencyAmount) {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
         uint256 amountOfTokenOut_ = 0;
         uint[] memory amountsOut;
 
@@ -1119,5 +1143,16 @@ contract Operations is AppStorage {
 
         // Sets the swap router address in storage, enabling token swaps within the protocol
         _appStorage.swapRouter = _swapRouter;
+    }
+
+    /// @notice this function is used to activate or deactivate the p2p fail safe
+    /// @param _activate a boolean to activate or deactivate the fail safe
+    /// @dev this function can only be called by the deployer of the contract
+    /// @dev emits the P2pFailSafeStatus event
+    function activtateFailSafe(bool _activate) external {
+        LibDiamond.enforceIsContractOwner();
+
+        _appStorage.isP2pStopped = _activate;
+        emit Event.P2pFailSafeStatus(_activate);
     }
 }

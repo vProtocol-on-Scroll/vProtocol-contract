@@ -84,4 +84,10 @@ library Validator {
             revert Protocol__MustBeMoreThanZero();
         }
     }
+
+    function _isP2pStopped(bool _isStopped) internal pure {
+        if (_isStopped) {
+            revert Protocol__P2pIsStopped();
+        }
+    }
 }

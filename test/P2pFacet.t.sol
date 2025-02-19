@@ -15,6 +15,8 @@ import "../contracts/utils/validators/Error.sol";
 import {LibGettersImpl} from "../contracts/libraries/LibGetters.sol";
 import {AppStorage} from "../contracts/utils/functions/AppStorage.sol";
 
+import {Event} from "../contracts/model/Event.sol";
+
 contract P2pFacetTest is Test, IDiamondCut, AppStorage {
     //contract types of facets to be deployed
     Diamond diamond;
@@ -197,6 +199,32 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
         switchSigner(_user2);
         vm.expectRevert(Protocol__PriceStale.selector);
         p2pContract.serviceRequest{value: 7 ether}(1, tokens[0]);
+    }
+
+    function testP2pFailSafeMechanism() public {
+        P2pFacet p2pContract = P2pFacet(payable(diamond));
+
+        vm.expectEmit(true, false, false, true);
+        emit Event.P2pFailSafeStatus(true);
+        p2pContract.activtateFailSafe(true);
+
+        vm.expectRevert(Protocol__P2pIsStopped.selector);
+        _depositCollateral();
+
+        vm.expectRevert(Protocol__P2pIsStopped.selector);
+        _createLendingRequest();
+
+        vm.expectRevert(Protocol__P2pIsStopped.selector);
+        p2pContract.serviceRequest{value: 1 ether}(1, tokens[0]);
+
+        vm.expectRevert(Protocol__P2pIsStopped.selector);
+        p2pContract.withdrawCollateral(tokens[0], 2 ether);
+
+        vm.expectRevert(Protocol__P2pIsStopped.selector);
+        p2pContract.repayLoan{value: 2 ether}(1, 2 ether);
+
+        vm.expectRevert(Protocol__P2pIsStopped.selector);
+        p2pContract.requestLoanFromListing(1, 2 ether);
     }
 
     function _depositCollateral() public {
