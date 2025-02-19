@@ -44,7 +44,7 @@ contract YieldOptimizationFacet is IYieldOptimization {
         s.yieldConfig.isInitialized = true;
         s.yieldConfig.epochStartTime = block.timestamp;
         s.yieldConfig.lastRewardDistribution = block.timestamp;
-        s.yieldConfig.rewardEmissionRate = 100; // tokens per day, configurable
+        s.yieldConfig.rewardEmissionRate = 1000E18; // tokens per day, configurable
         s.yieldConfig.compoundingFrequency = 1 days;
         
         // Initialize default strategy
