@@ -287,6 +287,139 @@ enum PoolType {
     STAKER
 }
 
+// Token-specific balances
+struct TokenBalance {
+    uint256 poolLiquidity;
+    uint256 p2pLiquidity;
+}
+
+// Token-specific rates
+struct TokenRate {
+    uint256 lendingPoolRate;
+    uint256 p2pLendingRate;
+}
+
+// Token-specific metrics
+struct TokenMetrics {
+    uint256 volatilityIndex;
+    uint256 demandIndex;
+}
+
+struct TokenUtilization {
+    uint256 poolUtilization;
+    uint256 p2pUtilization;
+}
+
+// Rebalancing Configuration
+struct RebalancingConfig {
+    bool isInitialized;
+    uint256 minRebalanceThreshold;
+    uint256 maxRebalanceThreshold;
+    uint256 rebalanceCooldown;
+    uint256 lastRebalanceTime;
+    uint256 minEfficiencyThreshold;
+    uint256 minAPYDifference;
+    bool emergencyPaused;
+    mapping(address => bool) authorizedRebalancers;
+    uint256 rebalanceCount;
+    RebalanceAction lastRebalanceAction;
+    uint256 lastRebalanceAmount;
+    uint256 totalAmountRebalanced;
+}
+
+// Strategy Configuration
+struct StrategyConfig {
+    bool isInitialized;
+    StrategyType activeStrategy;
+    uint256 activeStrategyId;
+    uint256 lastStrategyUpdate;
+    RiskProfile riskProfile;
+}
+
+// Rebalancing Strategy
+struct RebalancingStrategy {
+    StrategyType strategyType;
+    bool isActive;
+    uint256 createdAt;
+    uint256 lastUpdated;
+    bytes parameters;
+}
+
+// Strategy Performance Metrics
+struct StrategyPerformance {
+    uint256 totalAmountRebalanced;
+    uint256 performanceScore;
+    int256 yieldImprovement;
+    uint256 executionCount;
+}
+
+// Pool and P2P Balance Tracking
+struct PoolBalances {
+    uint256 totalDeposits;
+    uint256 totalBorrows;
+}
+
+struct P2PBalances {
+    uint256 totalLendOrders;
+    uint256 totalBorrowOrders;
+}
+
+// Strategy-specific parameters
+struct YieldMaximizerParams {
+    uint256 maxShiftPercentage;
+    uint256 minYieldDifferential;
+}
+
+struct RiskMinimizerParams {
+    uint256 targetUtilization;
+    uint256 maxVolatilityTolerance;
+}
+
+struct BalancedParams {
+    uint256 poolAllocationTarget;
+    uint256 p2pAllocationTarget;
+}
+
+struct DynamicParams {
+    uint256 volatilityWeight;
+    uint256 yieldWeight;
+    uint256 liquidityWeight;
+}
+
+// Rebalancing Action Types
+enum RebalanceAction {
+    NONE,
+    SHIFT_TO_POOL,
+    SHIFT_TO_P2P,
+    OPTIMIZE_ALLOCATION
+}
+
+// Strategy Types
+enum StrategyType {
+    BALANCED,
+    YIELD_MAXIMIZER,
+    RISK_MINIMIZER,
+    DYNAMIC,
+    CUSTOM
+}
+
+// Risk Profile Types
+enum RiskProfile {
+    CONSERVATIVE,
+    MODERATE,
+    AGGRESSIVE
+}
+
+// Market Condition Types
+enum MarketCondition {
+    NORMAL,
+    VOLATILE,
+    HIGH_DEMAND,
+    LOW_DEMAND,
+    UNSTABLE
+}
+
+
 /**
  * @dev Enum representing the status of a loan request.
  * OPEN - The loan request is open and waiting for a lender.

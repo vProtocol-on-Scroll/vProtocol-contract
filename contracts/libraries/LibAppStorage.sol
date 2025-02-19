@@ -38,6 +38,32 @@ library LibAppStorage {
         mapping(address => uint256) userRewardCheckpoints;
         /// @dev referral rewards
         mapping(address => uint256) referralRewards;
+        /// @dev token balances
+        mapping(address => TokenBalance) tokenBalances;
+        /// @dev token rates
+        mapping(address => TokenRate) tokenRates;
+        /// @dev token metrics
+        mapping(address => TokenMetrics) tokenMetrics;
+        /// @dev token utilization
+        mapping(address => TokenUtilization) tokenUtilization;
+        /// @dev rebalancing strategies
+        mapping(uint256 => RebalancingStrategy) strategies;
+        /// @dev strategy performance
+        mapping(uint256 => StrategyPerformance) strategyPerformance;
+        /// @dev rebalancing config
+        RebalancingConfig rebalancingConfig;
+        /// @dev pool balances
+        PoolBalances poolBalances;
+        /// @dev p2p balances
+        P2PBalances p2pBalances;
+        /// @dev yield maximizer params
+        YieldMaximizerParams yieldMaximizerParams;
+        /// @dev risk minimizer params
+        RiskMinimizerParams riskMinimizerParams;
+        /// @dev balanced params
+        BalancedParams balancedParams;
+        /// @dev dynamic params
+        DynamicParams dynamicParams;
         /// @dev boost tiers
         BoostTier[] boostTiers;
         /// @dev reward config
