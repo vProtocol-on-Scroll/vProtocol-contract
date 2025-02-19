@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.9;
+pragma solidity ^0.8.0;
 import "../model/Protocol.sol";
 
 library LibAppStorage {
+    bytes32 constant DIAMOND_STORAGE_POSITION = keccak256("diamond.standard.diamond.storage");
+
     struct Layout {
         /// @dev maps collateral token to their price feed
         mapping(address token => address priceFeed) s_priceFeeds;
@@ -23,7 +25,7 @@ library LibAppStorage {
         /// @dev user stakes
         mapping(address => UserStake) userStakes;
         /// @dev yield strategies
-        mapping(uint256 strategyId => YieldStrategy strategy) yieldStrategies;
+        mapping(uint256 => YieldStrategy) yieldStrategies;
         /// @dev user rewards
         mapping(address => uint256) userRewards;
         /// @dev user reward metrics
@@ -64,5 +66,14 @@ library LibAppStorage {
         uint8 rewardTokenDecimals;
         /// @dev yield config
         YieldConfig yieldConfig;
+        /// @dev protocol fees
+        uint256 protocolFees;
+    }
+
+    function layout() internal pure returns (Layout storage l) {
+        bytes32 position = DIAMOND_STORAGE_POSITION;
+        assembly {
+            l.slot := position
+        }
     }
 }
