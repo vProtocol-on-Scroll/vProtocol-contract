@@ -52,6 +52,8 @@ library LibAppStorage {
         mapping(uint256 => StrategyPerformance) strategyPerformance;
         /// @dev rebalancing config
         RebalancingConfig rebalancingConfig;
+        /// @dev strategy config
+        StrategyConfig strategyConfig;
         /// @dev pool balances
         PoolBalances poolBalances;
         /// @dev p2p balances
