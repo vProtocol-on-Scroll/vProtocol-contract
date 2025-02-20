@@ -10,8 +10,11 @@ pragma solidity ^0.8.0;
 
 import {LibDiamond} from "./libraries/LibDiamond.sol";
 import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
+import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 
 contract Diamond {
+    LibAppStorage.Layout internal s;
+
     constructor(address _contractOwner, address _diamondCutFacet) payable {
         LibDiamond.setContractOwner(_contractOwner);
 
@@ -25,6 +28,13 @@ contract Diamond {
             functionSelectors: functionSelectors
         });
         LibDiamond.diamondCut(cut, address(0), "");
+    }
+
+    function initialize(address _protocolToken) external {
+        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+        require(_protocolToken != address(0), "Invalid protocol token");
+        
+        s.protocolToken = _protocolToken;
     }
 
     // Find facet for function that is called and execute the
