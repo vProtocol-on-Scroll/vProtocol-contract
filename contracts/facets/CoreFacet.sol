@@ -40,6 +40,7 @@ function depositCollateral(
     Validator._validateSupplyParameters(address(asset), _receiver, _amount);
 
     address vaultAddress = _appStorage.assetToVault[ address(asset)];
+
     if (vaultAddress == address(0)) revert Protocol__AssetNotFound();
     // Cache vault instance
 
@@ -90,52 +91,5 @@ function depositCollateral(
 
 
 
-    // ========== WITHDRAW FUNCTION ========== //
-    // function withdrawAsset(
-    //     IERC20 asset,
-    //     uint256 _amount,
-    //     address _receiver,
-    //     address owner
-    // ) external nonReentrant protocolNotPaused returns (uint256) {
-    //     // Validate input parameters
-    //     require(address(asset) != address(0), "Zero asset address");
-    //     require(_amount > 0, "Zero withdrawal _amount");
-    //     require(_receiver != address(0), "Zero _receiver address");
 
-    //     // Get vault address from storage
-    //     address vaultAddress = _appStorage.assetToVault[address(asset)];
-    //     require(vaultAddress != address(0), "Asset vault not found");
-
-    //     CoreVault vault = CoreVault(vaultAddress);
-
-    //     // Check allowance if withdrawing from another account
-    //     if (msg.sender != owner) {
-    //         uint256 allowed = vault.allowance(owner, msg.sender);
-    //         require(allowed >= _amount, "Exceeds allowance");
-    //     }
-
-    //     // Execute withdrawal through vault contract
-    //     uint256 shares = vault.withdraw(_amount, _receiver, owner);
-
-    //     // Update storage
-    //     VaultConfig storage config = _appStorage.s_vaultConfigs[vaultAddress];
-    //     config.totalDeposits -= _amount;
-    //     _appStorage.userVaultData[owner][vaultAddress].deposited -= _amount;
-
-    //     emit WithdrawalMade(owner, address(asset), _amount, shares);
-    //     return shares;
-    // }
-
-    // // ========== HELPER FUNCTIONS ========== //
-    // function getVaultBalance(address asset) external view returns (uint256) {
-    //     address vaultAddress = _appStorage.assetToVault[address(asset)];
-    //     require(vaultAddress != address(0), "Vault not found");
-    //     return IERC20(asset).balanceOf(vaultAddress);
-    // }
-
-    // function getUserShares(address asset, address user) external view returns (uint256) {
-    //     address vaultAddress = _appStorage.assetToVault[address(asset)];
-    //     require(vaultAddress != address(0), "Vault not found");
-    //     return CoreVault(vaultAddress).balanceOf(user);
-    // }
 }
