@@ -50,6 +50,26 @@ library LibAppStorage {
         mapping(uint256 => RebalancingStrategy) strategies;
         /// @dev strategy performance
         mapping(uint256 => StrategyPerformance) strategyPerformance;
+        /// @dev token configs
+        mapping(address => TokenConfig) tokenConfigs;        // token => config
+        /// @dev supported tokens
+        mapping(address => bool) supportedTokens;            // token => is supported
+        /// @dev reserves
+        mapping(address => ReserveData) reserves;
+        /// @dev user deposits
+        mapping(address => mapping(address => uint256)) userDeposits;
+        /// @dev user borrows
+        mapping(address => mapping(address => uint256)) userBorrows;
+        /// @dev user collateral
+        mapping(address => mapping(address => uint256)) userCollateral;
+        /// @dev user rewards
+        mapping(address => RateData) rateData;
+        /// @dev vaults
+        mapping(address => address) vaults;
+        /// @dev vault deposits
+        mapping(address => uint256) vaultDeposits;
+        /// @dev all tokens
+        address[] allTokens;                                 // list of all supported tokens
         /// @dev rebalancing config
         RebalancingConfig rebalancingConfig;
         /// @dev strategy config
@@ -96,6 +116,8 @@ library LibAppStorage {
         uint8 rewardTokenDecimals;
         /// @dev yield config
         YieldConfig yieldConfig;
+        /// @dev lending pool config
+        LendingPoolConfig lendingPoolConfig;
         /// @dev protocol fees
         uint256 protocolFees;
     }

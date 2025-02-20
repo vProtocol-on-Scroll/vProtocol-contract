@@ -20,4 +20,12 @@ library Constants {
     uint256 public constant MAX_LOCK_PERIOD = 365 days;
     uint256 public constant EPOCH_DURATION = 1 days;
     address constant SWAP_ROUTER = 0xfB5f26851E03449A0403Ca945eBB4201415fd1fc;
+    uint256 constant RAY = 10**27; // 1 in ray format
+    uint256 constant SECONDS_PER_YEAR = 365 days;
+    uint256 constant MAX_BORROW_RATE = 5000; // 50% maximum borrow rate
+    uint256 constant HEALTH_FACTOR_THRESHOLD = 10000; // 100% (1.0)
+    uint256 constant LIQUIDATION_CLOSE_FACTOR_DEFAULT = 5000; // 50%
+    uint256 constant MAX_RESERVE_FACTOR = 5000; // 50%
+    uint256 constant MAX_LTV = 8000; // 80%
+    uint256 constant MIN_LIQUIDATION_THRESHOLD = 8250; // 82.5%
 }

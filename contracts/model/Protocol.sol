@@ -253,6 +253,43 @@ struct TokenBalance {
     uint256 p2pLiquidity;
 }
 
+/**
+ * @notice Configuration parameters for each supported token
+ * @param ltv Loan-to-value ratio in basis points (e.g., 7500 = 75%)
+ * @param liquidationThreshold Liquidation threshold in basis points (e.g., 8250 = 82.5%)
+ * @param liquidationBonus Liquidation bonus in basis points (e.g., 10500 = 105%)
+ * @param isActive Whether the token is currently active in the protocol
+ * @param reserveFactor Reserve factor in basis points (e.g., 2000 = 20%)
+ */
+struct TokenConfig {
+    uint256 ltv;                    // Maximum loan-to-value ratio
+    uint256 liquidationThreshold;   // Threshold at which position can be liquidated
+    uint256 liquidationBonus;       // Bonus for liquidators
+    bool isActive;                  // Whether token is active
+    uint256 reserveFactor;          // Percentage of interest that goes to reserves
+}
+
+/**
+ * @dev Struct to store information about a reserve.
+ * @param totalDeposits Total deposits in underlying
+ * @param totalBorrows Total borrows in underlying
+ * @param totalDepositShares Total shares issued
+ * @param normalizedDebt Normalized debt amount
+ * @param liquidityIndex Liquidity index for interest accrual
+ * @param borrowIndex Borrow index for interest accrual
+ * @param lastUpdateTimestamp Last update timestamp
+ */
+struct ReserveData {
+    uint256 totalDeposits;          // Total deposits in underlying
+    uint256 totalBorrows;           // Total borrows in underlying
+    uint256 totalDepositShares;     // Total shares issued
+    uint256 normalizedDebt;         // Normalized debt amount
+    uint256 liquidityIndex;         // Liquidity index for interest accrual
+    uint256 borrowIndex;            // Borrow index for interest accrual
+    uint256 lastUpdateTimestamp;    // Last update timestamp
+}
+
+
 // Token-specific rates
 struct TokenRate {
     uint256 lendingPoolRate;
@@ -286,6 +323,25 @@ struct RebalancingConfig {
     uint256 lastRebalanceAmount;
     uint256 totalAmountRebalanced;
 }
+
+
+struct LendingPoolConfig {
+    bool isInitialized;
+    uint256 reserveFactor;           // Global reserve factor
+    uint256 optimalUtilization;      // Optimal utilization rate
+    uint256 baseRate;                // Base interest rate
+    uint256 slopeRate;               // Rate increase slope
+    uint256 slopeExcess;             // Excess utilization slope
+    uint256 lastUpdateTimestamp;     // Last time rates were updated
+    bool isPaused;                   // Emergency pause flag
+}
+
+// Rate and Reserve Data structs
+struct RateData {
+    uint256 depositRate;            // Current deposit APY
+    uint256 borrowRate;             // Current borrow APY
+}
+
 
 // Strategy Configuration
 struct StrategyConfig {

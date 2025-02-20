@@ -102,4 +102,140 @@ library Event {
     event RewardSystemInitialized(address indexed rewardToken);
 
     event PoolsUpdated(uint256 lenderPool, uint256 borrowerPool, uint256 liquidatorPool, uint256 stakerPool);
+
+    event TokenConfigUpdated(address indexed token, uint256 ltv, uint256 liquidationThreshold, uint256 liquidationBonus);
+
+    event TokenRateUpdated(address indexed token, uint256 lendingPoolRate, uint256 p2pLendingRate);
+
+    event TokenUtilizationUpdated(address indexed token, uint256 utilization);
+
+    event TokenMetricsUpdated(address indexed token, uint256 totalDeposits, uint256 totalBorrowed, uint256 totalInterestAccrued);
+
+    event TokenBalancesUpdated(address indexed token, uint256 poolLiquidity, uint256 p2pLiquidity);
+
+    event TokenSupported(address indexed token);
+
+    event TokenUnsupported(address indexed token);
+
+    event TokenPaused(address indexed token);
+
+    event TokenUnpaused(address indexed token);
+
+    event LendingPoolConfigUpdated(uint256 optimalUtilization, uint256 baseRate, uint256 slopeRate, uint256 slopeExcess);
+    event LendingPoolPaused(address indexed token);
+    event LendingPoolUnpaused(address indexed token);
+
+     // Initialization and configuration events
+    event LendingPoolInitialized(
+        uint256 reserveFactor,
+        uint256 optimalUtilization,
+        uint256 baseRate,
+        uint256 slopeRate
+    );
+
+    event TokenAdded(
+        address indexed token,
+        uint256 ltv,
+        uint256 liquidationThreshold,
+        uint256 liquidationBonus
+    );
+
+    event TokenConfigurationUpdated(
+        address indexed token,
+        uint256 ltv,
+        uint256 liquidationThreshold,
+        uint256 liquidationBonus
+    );
+
+    event PoolPauseSet(bool paused);
+
+    // Deposit and withdrawal events
+    event Deposited(
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 shares
+    );
+
+    event Withdrawn(
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 shares
+    );
+
+    // Borrowing and repayment events
+    event Borrowed(
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 normalizedDebt
+    );
+
+    event Repaid(
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        uint256 normalizedDebt
+    );
+
+
+    // Liquidation events
+    event Liquidated(
+        address indexed user,
+        address indexed liquidator,
+        address indexed debtToken,
+        address collateralToken,
+        uint256 debtAmount,
+        uint256 collateralAmount
+    );
+
+    // Vault related events
+    event VaultDeployed(
+        address indexed token,
+        address indexed vault,
+        string name,
+        string symbol
+    );
+
+    event DepositedFromVault(
+        address indexed vault,
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+
+    event WithdrawnFromVault(
+        address indexed vault,
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+
+    // Rate update events
+    event RatesUpdated(
+        address indexed token,
+        uint256 depositRate,
+        uint256 borrowRate,
+        uint256 utilization
+    );
+
+    // Index update events
+    event IndexesUpdated(
+        address indexed token,
+        uint256 liquidityIndex,
+        uint256 borrowIndex
+    );
+
+    event ReserveDataUpdated(
+        address indexed token,
+        uint256 totalDeposits,
+        uint256 totalBorrows,
+        uint256 totalDepositShares,
+        uint256 normalizedDebt,
+        uint256 liquidityIndex,
+        uint256 borrowIndex,
+        uint256 lastUpdateTimestamp
+    );
+    
 }
