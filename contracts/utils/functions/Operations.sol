@@ -13,6 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../../model/Protocol.sol";
 import "../../model/Event.sol";
 import "../validators/Error.sol";
+import {ICrocSwapDex} from "../../interfaces/ICrocSwapDex.sol";
 
 /**
  * @title Operations
@@ -21,6 +22,7 @@ import "../validators/Error.sol";
  * Public write-only functions that allows writing into the state of LendBit
  */
 contract Operations is AppStorage {
+    event E(int128, int128);
     using SafeERC20 for IERC20;
 
     /**
@@ -950,6 +952,22 @@ contract Operations is AppStorage {
         emit Event.LoanRepayment(msg.sender, _requestId, _amount);
     }
 
+    function checkLiquidationEligibility(
+        address _user
+    ) public view returns (bool) {
+        uint256 _loanUsd = LibGettersImpl._getLoanCollectedInUsd(
+            _appStorage,
+            _user
+        );
+        uint256 _collateralUsd = LibGettersImpl._getAccountCollateralValue(
+            _appStorage,
+            _user
+        );
+        return
+            _loanUsd >
+            ((_collateralUsd * Constants.LIQUIDATION_THRESHOLD) / 100);
+    }
+
     /**
      * @dev Liquidates the collateral associated with a loan request and compensates the lender.
      * @param requestId The unique identifier of the loan request to be liquidated.
@@ -964,12 +982,16 @@ contract Operations is AppStorage {
     function liquidateUserRequest(uint96 requestId) external {
         // validate transaction is not stopped
         Validator._isP2pStopped(_appStorage.isP2pStopped);
-        Validator._onlyBot(_appStorage.botAddress, msg.sender);
+        // Validator._onlyBot(_appStorage.botAddress, msg.sender);
 
         Request memory _activeRequest = _appStorage.request[requestId];
         address loanCurrency = _activeRequest.loanRequestAddr;
         address lenderAddress = _activeRequest.lender;
         uint256 swappedAmount = 0;
+
+        if (!checkLiquidationEligibility(_activeRequest.author)) {
+            revert Protocol__NotLiquidateable();
+        }
 
         // Loop through each collateral token and swap to loan currency if applicable
         for (
@@ -983,11 +1005,13 @@ contract Operations is AppStorage {
 
             if (amountOfCollateralToken > 0) {
                 // Attempt to swap collateral token to loan currency
-                uint256[] memory loanCurrencyAmount = swapToLoanCurrency(
+                (int128 baseQuote, int128 quoteFlow) = swapToLoanCurrency(
                     collateralToken,
                     amountOfCollateralToken,
                     loanCurrency
                 );
+
+                emit E(baseQuote, quoteFlow);
 
                 // Update the collateral deposited for the user
                 _appStorage.s_addressToCollateralDeposited[
@@ -995,11 +1019,7 @@ contract Operations is AppStorage {
                 ][collateralToken] -= amountOfCollateralToken;
 
                 // Add swapped amount to the total; if swap failed, fallback to using collateral amount
-                if (loanCurrencyAmount.length > 0) {
-                    swappedAmount += loanCurrencyAmount[1];
-                } else {
-                    swappedAmount += amountOfCollateralToken;
-                }
+                // swappedAmount += uint256(quoteFlow); //loanCurrencyAmount[1];
 
                 // Mark collateral as fully used
                 _appStorage.s_idToCollateralTokenAmount[requestId][
@@ -1010,12 +1030,26 @@ contract Operations is AppStorage {
 
         // Transfer loan currency to the lender, ensuring not to exceed total repayment
         if (swappedAmount >= _activeRequest.totalRepayment) {
-            IERC20(loanCurrency).safeTransfer(
-                lenderAddress,
-                _activeRequest.totalRepayment
-            );
+            if (loanCurrency == Constants.NATIVE_TOKEN) {
+                IERC20(Constants.WETH).safeTransfer(
+                    lenderAddress,
+                    _activeRequest.totalRepayment
+                );
+            } else {
+                IERC20(loanCurrency).safeTransfer(
+                    lenderAddress,
+                    _activeRequest.totalRepayment
+                );
+            }
         } else {
-            IERC20(loanCurrency).safeTransfer(lenderAddress, swappedAmount);
+            if (loanCurrency == Constants.NATIVE_TOKEN) {
+                (bool _sent, ) = payable(lenderAddress).call{
+                    value: swappedAmount
+                }("");
+                require(_sent, "Protocol__TransferFailed");
+            } else {
+                IERC20(loanCurrency).safeTransfer(lenderAddress, swappedAmount);
+            }
         }
 
         // Mark request as closed post liquidation
@@ -1033,83 +1067,71 @@ contract Operations is AppStorage {
      * @param collateralToken The token used as collateral.
      * @param collateralAmount The amount of collateral to swap.
      * @param loanCurrency The target currency for the loan.
-     * @return loanCurrencyAmount Array containing amounts received for each token in the path.
+     * @return baseQuote The base amount swapped
+     * @return quoteFLow The loan currency received
      */
     function swapToLoanCurrency(
         address collateralToken,
         uint256 collateralAmount,
         address loanCurrency
-    ) public returns (uint256[] memory loanCurrencyAmount) {
+    ) internal returns (int128, int128) {
         // validate transaction is not stopped
+        ICrocSwapDex swapRouter = ICrocSwapDex(_appStorage.swapRouter);
         Validator._isP2pStopped(_appStorage.isP2pStopped);
-        uint256 amountOfTokenOut_ = 0;
-        uint[] memory amountsOut;
+
+        int128 baseQuote;
+        int128 quoteFlow;
 
         // Early exit if collateral and loan currencies are the same
         if (loanCurrency == collateralToken) {
-            return amountsOut;
+            baseQuote = -int128(int256(collateralAmount));
+            quoteFlow = int128(int256(collateralAmount));
+            return (baseQuote, quoteFlow);
         }
 
-        // Ensure ETH tokens are wrapped as WETH for compatibility with Uniswap
-        if (collateralToken == Constants.NATIVE_TOKEN) {
-            collateralToken = Constants.WETH;
-        }
-        if (loanCurrency == Constants.NATIVE_TOKEN) {
-            loanCurrency = Constants.WETH;
-        }
+        require(
+            collateralAmount <= type(uint128).max,
+            "Value exceeds uint128 limit"
+        );
 
-        // Define the swap path from collateral to loan currency
-        address[] memory path = new address[](2);
-        path[0] = collateralToken;
-        path[1] = loanCurrency;
-
+        uint128 _amount = uint128(collateralAmount);
         // Handle ETH to ERC20 swap
-        if (collateralToken == Constants.WETH) {
-            amountsOut = IUniswapV2Router02(_appStorage.swapRouter)
-                .swapExactETHForTokens{value: collateralAmount}(
-                amountOfTokenOut_,
-                path,
-                address(this),
-                block.timestamp + 300
+        if (collateralToken == Constants.NATIVE_TOKEN) {
+            (baseQuote, quoteFlow) = swapRouter.swap{value: collateralAmount}(
+                collateralToken,
+                loanCurrency,
+                0, //poolIdx,
+                true,
+                true,
+                uint128(_amount),
+                0,
+                0, //limitPrice,
+                1,
+                0x1
             );
-
-            // Handle ERC20 to ETH swap
-        } else if (loanCurrency == Constants.WETH) {
-            // Approve Uniswap router to transfer collateral tokens
-            IERC20(collateralToken).approve(
-                _appStorage.swapRouter,
-                collateralAmount
-            );
-
-            amountsOut = IUniswapV2Router02(_appStorage.swapRouter)
-                .swapExactTokensForETH(
-                    collateralAmount,
-                    amountOfTokenOut_,
-                    path,
-                    address(this),
-                    block.timestamp + 300
-                );
-
-            // Handle ERC20 to ERC20 swap
         } else {
+            // Handle ERC20 to ERC20 swap
             // Approve Uniswap router to transfer collateral tokens
             IERC20(collateralToken).approve(
                 _appStorage.swapRouter,
                 collateralAmount
             );
-
-            amountsOut = IUniswapV2Router02(_appStorage.swapRouter)
-                .swapExactTokensForTokens(
-                    collateralAmount,
-                    amountOfTokenOut_,
-                    path,
-                    address(this),
-                    block.timestamp + 300
-                );
+            (baseQuote, quoteFlow) = swapRouter.swap{value: collateralAmount}(
+                collateralToken,
+                loanCurrency,
+                0, //poolIdx,
+                true,
+                true,
+                uint128(_amount),
+                0,
+                0, //limitPrice,
+                1,
+                0x1
+            );
         }
 
         // Return the output amount in the target loan currency
-        return amountsOut;
+        return (baseQuote, quoteFlow);
     }
 
     /**

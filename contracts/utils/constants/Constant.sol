@@ -9,7 +9,7 @@ library Constants {
     uint256 constant MIN_HEALTH_FACTOR = 1;
     uint256 constant COLLATERALIZATION_RATIO = 80;
     address constant NATIVE_TOKEN = address(1);
-    address constant WETH = 0x4200000000000000000000000000000000000006;
+    address constant WETH = 0x5300000000000000000000000000000000000004;
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
     uint8 constant CONSISTENCY_LEVEL_FINALIZED = 15;
     uint256 constant GAS_LIMIT = 400_000;
@@ -19,4 +19,5 @@ library Constants {
     uint256 public constant MIN_LOCK_PERIOD = 7 days;
     uint256 public constant MAX_LOCK_PERIOD = 365 days;
     uint256 public constant EPOCH_DURATION = 1 days;
+    address constant SWAP_ROUTER = 0xfB5f26851E03449A0403Ca945eBB4201415fd1fc;
 }

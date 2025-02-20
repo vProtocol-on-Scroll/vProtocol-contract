@@ -83,7 +83,11 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
         // tokens.push()
         // tokens.push(0xFadA8b0737D4A3AE7118918B7E69E689034c0127)
 
-        diamond.initialize(tokens, priceFeeds);
+        diamond.initialize(tokens, priceFeeds, address(diamond));
+
+        P2pFacet(payable(diamond)).setSwapRouter(
+            0xfB5f26851E03449A0403Ca945eBB4201415fd1fc
+        );
 
         vm.deal(_user1, 20 ether);
         vm.deal(_user2, 50 ether);
@@ -97,6 +101,7 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
     }
 
     function testLoanListingDuration() public {
+        switchSigner(_user1);
         _depositCollateral();
         P2pFacet p2pContract = P2pFacet(payable(diamond));
 
@@ -123,6 +128,7 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
     }
 
     function testRequestExpiration() public {
+        switchSigner(_user1);
         _depositCollateral();
 
         P2pFacet p2pContract = P2pFacet(payable(diamond));
@@ -157,6 +163,7 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
     }
 
     function testRequestCancellation() public {
+        switchSigner(_user1);
         _depositCollateral();
 
         P2pFacet p2pContract = P2pFacet(payable(diamond));
@@ -189,6 +196,7 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
     }
 
     function testStalePriceFeed() public {
+        switchSigner(_user1);
         _depositCollateral();
         _createLendingRequest();
 
@@ -227,10 +235,49 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
         p2pContract.requestLoanFromListing(1, 2 ether);
     }
 
-    function _depositCollateral() public {
-        switchSigner(_user1);
+    function testLiquidationCriteria() public {
         P2pFacet p2pContract = P2pFacet(payable(diamond));
+        switchSigner(_user1);
+        _depositCollateral();
+        uint256 _amount = 0.2 ether;
+        uint16 _interest = 200;
+        uint256 _returnDuration = block.timestamp + 30 days;
+        uint256 _expirationDate = block.timestamp + 1 days;
+        address _loanCurrency = tokens[0];
 
+        p2pContract.createLendingRequest(
+            _amount,
+            _interest,
+            _returnDuration,
+            _expirationDate,
+            _loanCurrency
+        );
+        switchSigner(_user2);
+        _serviceRequest();
+        assertFalse(p2pContract.checkLiquidationEligibility(_user1));
+
+        switchSigner(_user1);
+        _createLendingRequest();
+
+        switchSigner(_user2);
+        p2pContract.serviceRequest{value: 7 ether}(2, tokens[0]);
+        assertTrue(p2pContract.checkLiquidationEligibility(_user1));
+    }
+
+    function testLiquidateUserRequest() public {
+        P2pFacet p2pContract = P2pFacet(payable(diamond));
+        switchSigner(_user1);
+        _depositCollateral();
+        _createLendingRequest();
+
+        switchSigner(_user2);
+        _serviceRequest();
+
+        p2pContract.liquidateUserRequest(1);
+    }
+
+    function _depositCollateral() public {
+        P2pFacet p2pContract = P2pFacet(payable(diamond));
         p2pContract.depositCollateral{value: 10 ether}(tokens[0], 10 ether);
     }
 
@@ -249,6 +296,11 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
             _expirationDate,
             _loanCurrency
         );
+    }
+
+    function _serviceRequest() public {
+        P2pFacet p2pContract = P2pFacet(payable(diamond));
+        p2pContract.serviceRequest{value: 7 ether}(1, tokens[0]);
     }
 
     function mkaddr(string memory name) public returns (address) {
