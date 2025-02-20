@@ -12,8 +12,11 @@ import {LibDiamond} from "./libraries/LibDiamond.sol";
 import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
 import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 
+import {LibAppStorage} from "./libraries/LibAppStorage.sol";
+import "./utils/validators/Error.sol";
+
 contract Diamond {
-    LibAppStorage.Layout internal s;
+    LibAppStorage.Layout internal _appStorage;
 
     constructor(address _contractOwner, address _diamondCutFacet) payable {
         LibDiamond.setContractOwner(_contractOwner);
@@ -30,11 +33,26 @@ contract Diamond {
         LibDiamond.diamondCut(cut, address(0), "");
     }
 
-    function initialize(address _protocolToken) external {
-        require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
+    /// @dev Acts as our contructor
+    /// @param _tokens address of all the tokens
+    /// @param _priceFeeds address of all the pricefeed tokens
+    function initialize(
+        address[] memory _tokens,
+        address[] memory _priceFeeds,
+        address _protocolToken
+    ) public {
+        LibDiamond.enforceIsContractOwner();
         require(_protocolToken != address(0), "Invalid protocol token");
-        
-        s.protocolToken = _protocolToken;
+        if (_tokens.length != _priceFeeds.length) {
+            revert Protocol__tokensAndPriceFeedsArrayMustBeSameLength();
+        }
+
+        for (uint8 i = 0; i < _tokens.length; i++) {
+            _appStorage.s_isLoanable[_tokens[i]] = true;
+            _appStorage.s_priceFeeds[_tokens[i]] = _priceFeeds[i];
+            _appStorage.s_collateralToken.push(_tokens[i]);
+        }
+        _appStorage.protocolToken = _protocolToken;
     }
 
     // Find facet for function that is called and execute the

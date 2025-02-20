@@ -30,10 +30,12 @@ library LibGettersImpl {
         uint256 _amount,
         uint8 _decimal
     ) internal view returns (uint256) {
-        AggregatorV3Interface _priceFeed = AggregatorV3Interface(
-            _appStorage.s_priceFeeds[_token]
-        );
-        (, int256 _price, , , ) = _priceFeed.latestRoundData();
+        // AggregatorV3Interface _priceFeed = AggregatorV3Interface(
+        //     _appStorage.s_priceFeeds[_token]
+        // );
+        // (, int256 _price, , , ) = _priceFeed.latestRoundData();
+        (int256 _price, bool _isStale) = _isPriceStale(_appStorage, _token);
+        if (_isStale) revert Protocol__PriceStale();
         return
             ((uint256(_price) * Constants.NEW_PRECISION) * (_amount)) /
             ((10 ** _decimal));
@@ -418,5 +420,20 @@ library LibGettersImpl {
         for (uint96 i = 1; i <= requestId; i++) {
             _requests[i - 1] = _appStorage.request[i];
         }
+    }
+
+    function _isPriceStale(
+        LibAppStorage.Layout storage _appStorage,
+        address _token
+    ) internal view returns (int256, bool) {
+        AggregatorV3Interface _priceFeed = AggregatorV3Interface(
+            _appStorage.s_priceFeeds[_token]
+        );
+        (, int256 _price, , uint256 _timestamp, ) = _priceFeed
+            .latestRoundData();
+        return (
+            _price,
+            ((block.timestamp - _timestamp) > Constants.PRICE_STALE_THRESHOLD)
+        );
     }
 }

@@ -86,6 +86,8 @@ library LibAppStorage {
         address botAddress;
         /// @dev uniswap router address
         address swapRouter;
+        /// @dev failsafe to stop the contract from being used
+        bool isP2pStopped;
         /// @dev protocol token
         address protocolToken;
         /// @dev reward token

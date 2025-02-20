@@ -85,12 +85,9 @@ library Validator {
         }
     }
 
-    function _isWormholeRelayer(
-        address _wormhole,
-        address _sender
-    ) internal pure {
-        if (_wormhole != _sender) {
-            revert Protocol__InvalidCaller();
+    function _isP2pStopped(bool _isStopped) internal pure {
+        if (_isStopped) {
+            revert Protocol__P2pIsStopped();
         }
     }
 }
