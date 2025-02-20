@@ -13,13 +13,10 @@ library Constants {
     address constant USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
     uint8 constant CONSISTENCY_LEVEL_FINALIZED = 15;
     uint256 constant GAS_LIMIT = 400_000;
-<<<<<<< HEAD
     uint256 constant PRICE_STALE_THRESHOLD = 3 * 3600; // 3 hours
-=======
     uint256 public constant BASIS_POINTS = 10000;
     uint256 public constant LOYALTY_MULTIPLIER_PRECISION = 10000;
     uint256 public constant MIN_LOCK_PERIOD = 7 days;
     uint256 public constant MAX_LOCK_PERIOD = 365 days;
     uint256 public constant EPOCH_DURATION = 1 days;
->>>>>>> main
 }
