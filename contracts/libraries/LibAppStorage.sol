@@ -20,6 +20,11 @@ library LibAppStorage {
         mapping(uint96 requestId => Request) request;
         /// @dev mapping a requestId to the collaterals used in a request
         mapping(uint96 requestId => mapping(address => uint256)) s_idToCollateralTokenAmount;
+        /// @dev allowlist for spoke contracts
+        mapping(uint16 => address) s_spokeProtocols;
+        /// @dev wormhole message hashes
+        mapping(bytes32 => bool) s_consumedMessages;
+     
         /// @dev mapping of id to loanListing
         mapping(uint96 listingId => LoanListing) loanListings;
         /// @dev user stakes
@@ -82,10 +87,26 @@ library LibAppStorage {
         uint96 requestId;
         /// @dev the number of listings created
         uint96 listingId;
+  
         /// @dev address of the bot that calls the liquidate function
         address botAddress;
         /// @dev uniswap router address
         address swapRouter;
+    
+
+
+//  COREPOOLCONFIG STATE VARIABLES        
+     // Vault Management
+    mapping(address => address) assetToVault; // assetAddress => vaultAddress
+    mapping(address => VaultConfig) s_vaultConfigs;
+    mapping(address => mapping(address => UserData)) s_userData; // user => vault => state
+    // Protocol Configuration
+    address s_protocolFeeRecipient;
+    uint256 s_protocolFeeBps; // Shared fee across all vaults
+    uint256 s_maxProtocolLTVBps;
+    bool paused;
+
+
         /// @dev failsafe to stop the contract from being used
         bool isP2pStopped;
         /// @dev protocol token

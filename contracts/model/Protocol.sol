@@ -401,3 +401,22 @@ enum ListingStatus {
     OPEN,
     CLOSED
 }
+
+
+//COREPOOL CONFIG
+// Expanded User State
+struct UserData {
+    uint256 depositedAssets;
+    uint256 borrowedAssets;
+    uint256 interestAccrued;
+    uint256 shares;
+    uint256 lastUpdated;
+    uint256 collateralUsed;
+}
+
+struct VaultConfig {
+    uint256 ltvBps;           // Loan-to-Value (8500 = 85%)
+    uint256 liquidationThresholdBps;
+    uint256 totalDeposits;
+    uint256 totalBorrowed;
+}

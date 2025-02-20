@@ -62,6 +62,13 @@ library Event {
         uint256 indexed totalRepayment
     );
 
+
+    event AssetSupplied(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+    event VaultCreated(address indexed asset, address vault);
+    event FeesUpdated(uint256 feeBps);
+    event VaultConfigUpdated(address vault, uint256 ltvBps, uint256 liquidationThresholdBps);
+
+    
     event P2pFailSafeStatus(bool status);
     event BoostTierUpdated(uint256 requiredStake, uint256 boostPercentage);
 
