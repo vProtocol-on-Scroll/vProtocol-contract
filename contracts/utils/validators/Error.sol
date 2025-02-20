@@ -50,12 +50,13 @@ error Protocol__InvalidCaller();
 error Protocol__InvalidAction();
 error Protocol__InvalidHash();
 
-// Error From Wormhole
-error Protocol__NotAnEvmAddress(bytes32);
-
-//Error for spoke contract
-
-error spoke__InsufficientGasFee();
-error spoke__TokenArrayCantBeEmpty();
-error spoke__InvalidSpokeChainId();
-error spoke_TokenNotVaid();
+//PAUSEABLE FACET
+error Protocol__EmergencyState();
+error Protocol__InvalidTransferParameters();
+error Protocol__FeeTooHight();
+error Protocol__LtvIsGreaterThan100Percent();
+error Protocol__AssetNotFound();
+error Protocol__DepositFailed();
+error Protocol__InvalidETHAmount();
+    error ProtocolPaused();
+    error ProtocolActive();

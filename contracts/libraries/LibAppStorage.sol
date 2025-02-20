@@ -22,8 +22,7 @@ library LibAppStorage {
         mapping(uint16 => address) s_spokeProtocols;
         /// @dev wormhole message hashes
         mapping(bytes32 => bool) s_consumedMessages;
-        /// @dev cctp domains
-        mapping(uint16 => uint32) s_chainIdToCCTPDomain;
+     
         /// @dev mapping of id to loanListing
         mapping(uint96 listingId => LoanListing) loanListings;
         /// @dev Collection of all colleteral Adresses
@@ -34,13 +33,31 @@ library LibAppStorage {
         uint96 requestId;
         /// @dev the number of listings created
         uint96 listingId;
-        /// @dev number of confirmations for wormhole messages
-        uint8 consistencyLevel;
+  
         /// @dev address of the bot that calls the liquidate function
         address botAddress;
         /// @dev uniswap router address
         address swapRouter;
-        /// @dev Cross-Chain Provider
-        Provider provider;
-    }
+    
+
+
+//  COREPOOLCONFIG STATE VARIABLES        
+     // Vault Management
+    mapping(address => address) assetToVault; // assetAddress => vaultAddress
+    mapping(address => VaultConfig) s_vaultConfigs;
+    mapping(address => mapping(address => UserData)) s_userData; // user => vault => state
+    // Protocol Configuration
+    address s_protocolFeeRecipient;
+    uint256 s_protocolFeeBps; // Shared fee across all vaults
+    uint256 s_maxProtocolLTVBps;
+    bool paused;
+
+
+}
+
+
+
+
+
+
 }
