@@ -49,6 +49,9 @@ error Protocol__OnlyBotCanAccess();
 error Protocol__InvalidCaller();
 error Protocol__InvalidAction();
 error Protocol__InvalidHash();
+error Protocol__PriceStale();
+error Protocol__P2pIsStopped();
+error Protocol__NotLiquidateable();
 
 //PAUSEABLE FACET
 error Protocol__EmergencyState();
@@ -60,3 +63,5 @@ error Protocol__DepositFailed();
 error Protocol__InvalidETHAmount();
     error ProtocolPaused();
     error ProtocolActive();
+// Error From Wormhole
+error Protocol__NotAnEvmAddress(bytes32);

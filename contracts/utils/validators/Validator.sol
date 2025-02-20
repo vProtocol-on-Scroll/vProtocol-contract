@@ -91,4 +91,9 @@ library Validator {
         }
     }
 
+    function _isP2pStopped(bool _isStopped) internal pure {
+        if (_isStopped) {
+            revert Protocol__P2pIsStopped();
+        }
+    }
 }

@@ -36,7 +36,6 @@ library Utils {
 
     /**
      * @dev Calculates the total repayment amount including interest for a loan.
-     * @param _returnDate The expected return date of the loan.
      * @param _amount The principal loan amount.
      * @param _interest The interest rate as a basis point (1% = 100).
      * @return _totalRepayment The total amount to be repaid (principal + interest).
@@ -45,13 +44,10 @@ library Utils {
      * - `_returnDate` must be in the future relative to the current block timestamp.
      */
     function calculateLoanInterest(
-        uint256 _returnDate,
         uint256 _amount,
         uint16 _interest
-    ) internal view returns (uint256 _totalRepayment) {
+    ) internal pure returns (uint256 _totalRepayment) {
         // Ensure the return date is in the future
-        if (_returnDate < block.timestamp)
-            revert Protocol__DateMustBeInFuture();
 
         // Calculate total repayment amount as principal plus calculated interest
         _totalRepayment = _amount + calculatePercentage(_amount, _interest);
