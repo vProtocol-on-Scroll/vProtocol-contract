@@ -10,6 +10,7 @@ pragma solidity ^0.8.0;
 
 import {LibDiamond} from "./libraries/LibDiamond.sol";
 import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
+import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 
 import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 import "./utils/validators/Error.sol";
@@ -37,9 +38,11 @@ contract Diamond {
     /// @param _priceFeeds address of all the pricefeed tokens
     function initialize(
         address[] memory _tokens,
-        address[] memory _priceFeeds
+        address[] memory _priceFeeds,
+        address _protocolToken
     ) public {
         LibDiamond.enforceIsContractOwner();
+        require(_protocolToken != address(0), "Invalid protocol token");
         if (_tokens.length != _priceFeeds.length) {
             revert Protocol__tokensAndPriceFeedsArrayMustBeSameLength();
         }
@@ -49,6 +52,7 @@ contract Diamond {
             _appStorage.s_priceFeeds[_tokens[i]] = _priceFeeds[i];
             _appStorage.s_collateralToken.push(_tokens[i]);
         }
+        _appStorage.protocolToken = _protocolToken;
     }
 
     // Find facet for function that is called and execute the
