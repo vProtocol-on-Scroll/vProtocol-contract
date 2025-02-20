@@ -33,11 +33,11 @@ struct Request {
     uint16 interest;
     uint256 totalRepayment;
     uint256 returnDate;
+    uint256 expirationDate;
     address lender;
     address loanRequestAddr;
     address[] collateralTokens;
     Status status;
-    uint16 chainId;
 }
 
 /**
@@ -59,55 +59,15 @@ struct LoanListing {
     uint256 amount;
     uint256 min_amount;
     uint256 max_amount;
-    uint256 returnDate;
+    uint256 returnDuration;
+    uint256 expirationDate;
     uint16 interest;
     ListingStatus listingStatus;
-    uint16 chainId;
-}
-
-/**
- * @dev Struct to store information about a cross-chain provider in the protocol.
- *
- * @param chainId The unique identifier of the blockchain network this provider operates on.
- * @param wormhole The address of the Wormhole contract on this chain, used for cross-chain messaging.
- *                 This is a payable address to enable potential fee transfers for cross-chain transactions.
- * @param tokenBridge The address of the token bridge contract on this chain, used for token transfers between chains.
- */
-struct Provider {
-    uint16 chainId;
-    address payable wormhole;
-    address tokenBridge;
-    address wormholeRelayer;
-    address circleTokenMessenger;
-    address circleMessageTransmitter;
-}
-
-enum Action {
-    Deposit,
-    CreateRequest,
-    Withdraw,
-    ServiceRequest,
-    CreateListing,
-    RequestFromLoan,
-    Repay,
-    Credit
 }
 
 enum Round {
     UP,
     DOWN
-}
-
-struct ActionPayload {
-    Action action;
-    uint16 interest;
-    uint96 id;
-    address sender;
-    address assetAddress;
-    uint256 assetAmount;
-    uint256 returnDate;
-    uint256 min_amount;
-    uint256 max_amount;
 }
 
 /**

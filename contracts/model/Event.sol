@@ -8,23 +8,20 @@ library Event {
         address indexed _borrower,
         uint96 indexed requestId,
         uint _amount,
-        uint16 _interest,
-        uint16 indexed _chainId
+        uint16 _interest
     );
 
     event RequestServiced(
         uint96 indexed _requestId,
         address indexed _lender,
         address indexed _borrower,
-        uint256 _amount,
-        uint16 _chainId
+        uint256 _amount
     );
     event RequestClosed(uint96 indexed _requestId, address indexed _borrower);
     event CollateralWithdrawn(
         address indexed sender,
         address indexed _tokenCollateralAddress,
-        uint256 _amount,
-        uint16 _chainId
+        uint256 _amount
     );
     event UpdatedCollateralTokens(address indexed sender, uint8 newTokensCount);
     event AcceptedListedAds(
@@ -33,12 +30,7 @@ library Event {
         uint256 indexed amount,
         uint8 adStatus
     );
-    event LoanRepayment(
-        address indexed sender,
-        uint96 id,
-        uint256 amount,
-        uint16 indexed chainId
-    );
+    event LoanRepayment(address indexed sender, uint96 id, uint256 amount);
     event UpdateLoanableToken(
         address indexed _token,
         address _priceFeed,
@@ -47,8 +39,7 @@ library Event {
     event CollateralDeposited(
         address indexed _sender,
         address indexed _token,
-        uint256 _value,
-        uint16 indexed _chainId
+        uint256 _value
     );
 
     event withdrawnAdsToken(
@@ -62,8 +53,7 @@ library Event {
         uint96 indexed listingId,
         address indexed sender,
         address indexed tokenAddress,
-        uint256 amount,
-        uint16 chainId
+        uint256 amount
     );
 
     event RequestLiquidated(
@@ -72,6 +62,7 @@ library Event {
         uint256 indexed totalRepayment
     );
 
+    event P2pFailSafeStatus(bool status);
     event BoostTierUpdated(uint256 requiredStake, uint256 boostPercentage);
 
     event RewardConfigUpdated(uint256 lenderShare, uint256 borrowerShare, uint256 liquidatorShare, uint256 stakerShare);
