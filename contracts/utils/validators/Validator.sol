@@ -22,6 +22,12 @@ library Validator {
         }
     }
 
+    function _validateSupplyParameters(address _sender, address _receiver, uint256 _amount) internal pure {
+    if (_sender == address(0) || _receiver == address(0) || _amount == 0) {
+        revert Protocol__InvalidTransferParameters();
+    }
+}
+
     /**
      * @dev Validates that a token is allowed by checking if its price feed address is non-zero.
      *

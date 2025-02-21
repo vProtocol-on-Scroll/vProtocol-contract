@@ -53,5 +53,15 @@ error Protocol__PriceStale();
 error Protocol__P2pIsStopped();
 error Protocol__NotLiquidateable();
 
+//PAUSEABLE FACET
+error Protocol__EmergencyState();
+error Protocol__InvalidTransferParameters();
+error Protocol__FeeTooHight();
+error Protocol__LtvIsGreaterThan100Percent();
+error Protocol__AssetNotFound();
+error Protocol__DepositFailed();
+error Protocol__InvalidETHAmount();
+    error ProtocolPaused();
+    error ProtocolActive();
 // Error From Wormhole
 error Protocol__NotAnEvmAddress(bytes32);

@@ -13,7 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../../model/Protocol.sol";
 import "../../model/Event.sol";
 import "../validators/Error.sol";
-import {ICrocSwapDex} from "../../interfaces/ICrocSwapDex.sol";
+import {ICrocSwapDex, ICrocImpact, ICrocQuery} from "../../interfaces/ICrocSwapDex.sol";
 
 /**
  * @title Operations
@@ -1005,13 +1005,11 @@ contract Operations is AppStorage {
 
             if (amountOfCollateralToken > 0) {
                 // Attempt to swap collateral token to loan currency
-                (int128 baseQuote, int128 quoteFlow) = swapToLoanCurrency(
-                    collateralToken,
-                    amountOfCollateralToken,
-                    loanCurrency
-                );
-
-                emit E(baseQuote, quoteFlow);
+                // (int128 baseQuote, int128 quoteFlow) = swapToLoanCurrency(
+                //     collateralToken,
+                //     amountOfCollateralToken,
+                //     loanCurrency
+                // );
 
                 // Update the collateral deposited for the user
                 _appStorage.s_addressToCollateralDeposited[
@@ -1070,69 +1068,101 @@ contract Operations is AppStorage {
      * @return baseQuote The base amount swapped
      * @return quoteFLow The loan currency received
      */
-    function swapToLoanCurrency(
-        address collateralToken,
-        uint256 collateralAmount,
-        address loanCurrency
-    ) internal returns (int128, int128) {
-        // validate transaction is not stopped
-        ICrocSwapDex swapRouter = ICrocSwapDex(_appStorage.swapRouter);
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+    // function swapToLoanCurrency(
+    //     address collateralToken,
+    //     uint256 collateralAmount,
+    //     address loanCurrency
+    // ) public returns (int128, int128) {
+    //     // validate transaction is not stopped
+    //     ICrocSwapDex swapRouter = ICrocSwapDex(_appStorage.swapRouter);
+    //     Validator._isP2pStopped(_appStorage.isP2pStopped);
 
-        int128 baseQuote;
-        int128 quoteFlow;
+    //     ICrocQuery queryRouter = ICrocQuery(
+    //         0x62223e90605845Cf5CC6DAE6E0de4CDA130d6DDf
+    //     );
 
-        // Early exit if collateral and loan currencies are the same
-        if (loanCurrency == collateralToken) {
-            baseQuote = -int128(int256(collateralAmount));
-            quoteFlow = int128(int256(collateralAmount));
-            return (baseQuote, quoteFlow);
-        }
+    //     uint128 _price = queryRouter.queryPrice(
+    //         address(0),
+    //         0x1D738a3436A8C49CefFbaB7fbF04B660fb528CbD,
+    //         420
+    //     );
 
-        require(
-            collateralAmount <= type(uint128).max,
-            "Value exceeds uint128 limit"
-        );
+    //     ICrocImpact impactRouter = ICrocImpact(
+    //         0xc2c301759B5e0C385a38e678014868A33E2F3ae3
+    //     );
 
-        uint128 _amount = uint128(collateralAmount);
-        // Handle ETH to ERC20 swap
-        if (collateralToken == Constants.NATIVE_TOKEN) {
-            (baseQuote, quoteFlow) = swapRouter.swap{value: collateralAmount}(
-                collateralToken,
-                loanCurrency,
-                0, //poolIdx,
-                true,
-                true,
-                uint128(_amount),
-                0,
-                0, //limitPrice,
-                1,
-                0x1
-            );
-        } else {
-            // Handle ERC20 to ERC20 swap
-            // Approve Uniswap router to transfer collateral tokens
-            IERC20(collateralToken).approve(
-                _appStorage.swapRouter,
-                collateralAmount
-            );
-            (baseQuote, quoteFlow) = swapRouter.swap{value: collateralAmount}(
-                collateralToken,
-                loanCurrency,
-                0, //poolIdx,
-                true,
-                true,
-                uint128(_amount),
-                0,
-                0, //limitPrice,
-                1,
-                0x1
-            );
-        }
+    //     int128 baseQuote;
+    //     int128 quoteFlow;
 
-        // Return the output amount in the target loan currency
-        return (baseQuote, quoteFlow);
-    }
+    //     // Early exit if collateral and loan currencies are the same
+    //     if (loanCurrency == collateralToken) {
+    //         baseQuote = -int128(int256(collateralAmount));
+    //         quoteFlow = int128(int256(collateralAmount));
+    //         return (baseQuote, quoteFlow);
+    //     }
+
+    //     require(
+    //         collateralAmount <= type(uint128).max,
+    //         "Value exceeds uint128 limit"
+    //     );
+
+    //     uint128 _amount = uint128(collateralAmount);
+
+    //     impactRouter.calcImpact(
+    //         address(0),
+    //         loanCurrency,
+    //         420,
+    //         true,
+    //         true,
+    //         _amount,
+    //         0,
+    //         _price
+    //     );
+    //     // Handle ETH to ERC20 swap
+    //     if (collateralToken == Constants.NATIVE_TOKEN) {
+    //         swapRouter.userCmd{value: collateralAmount}(
+    //             1,
+    //             abi.encode(
+    //                 address(0),
+    //                 loanCurrency,
+    //                 420, //poolIdx,
+    //                 true,
+    //                 true,
+    //                 uint128(_amount),
+    //                 0,
+    //                 _price,
+    //                 1,
+    //                 0x0
+    //             )
+    //         );
+    //     } else {
+    //         // Handle ERC20 to ERC20 swap
+    //         // Approve Uniswap router to transfer collateral tokens
+    //         IERC20(collateralToken).approve(
+    //             _appStorage.swapRouter,
+    //             collateralAmount
+    //         );
+
+    //         swapRouter.userCmd(
+    //             1,
+    //             abi.encode(
+    //                 collateralToken,
+    //                 loanCurrency,
+    //                 420, //poolIdx,
+    //                 true,
+    //                 true,
+    //                 uint128(_amount),
+    //                 0,
+    //                 _price,
+    //                 1,
+    //                 0x0
+    //             )
+    //         );
+    //     }
+
+    //     // Return the output amount in the target loan currency
+    //     return (baseQuote, quoteFlow);
+    // }
 
     /**
      * @notice Sets the bot address for the protocol.
@@ -1176,5 +1206,514 @@ contract Operations is AppStorage {
 
         _appStorage.isP2pStopped = _activate;
         emit Event.P2pFailSafeStatus(_activate);
+    }
+
+    /**
+     * @dev Find the best matching lending offer for a new borrowing request
+     * @param _loanCurrency The currency being borrowed
+     * @param _amount The amount needed to borrow
+     * @param _maxInterest Maximum interest rate the borrower is willing to pay
+     * @param _returnDuration The loan return duration
+     * @return listingId ID of the best matching lending offer, 0 if no match found
+     */
+    function findMatchingLendingOffer(
+        address _loanCurrency,
+        uint256 _amount,
+        uint16 _maxInterest,
+        uint256 _returnDuration
+    ) public view returns (uint96 listingId) {
+        uint256 bestScore = 0;
+        uint96 bestMatch = 0;
+
+        // Iterate through all existing lending offers to find the best match
+        for (uint96 i = 1; i <= _appStorage.listingId; i++) {
+            LoanListing memory listing = _appStorage.loanListings[i];
+
+            // Skip listings that don't meet basic criteria
+            if (listing.listingStatus != ListingStatus.OPEN) continue;
+            if (listing.tokenAddress != _loanCurrency) continue;
+            if (listing.interest > _maxInterest) continue;
+            if (listing.amount < _amount) continue;
+            if (_amount < listing.min_amount || _amount > listing.max_amount)
+                continue;
+            if (_returnDuration > block.timestamp + listing.returnDuration)
+                continue;
+
+            // Calculate match score - prioritize:
+            // 1. Lower interest rates (weighted most heavily)
+            // 2. Longer available durations
+            // 3. Larger available amounts
+
+            uint256 interestScore = (_maxInterest - listing.interest) * 1000;
+            uint256 durationScore = (listing.returnDuration * 100) /
+                (_returnDuration - block.timestamp);
+            uint256 amountScore = (listing.amount * 10) / _amount;
+
+            uint256 score = interestScore + durationScore + amountScore;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMatch = i;
+            }
+        }
+
+        return bestMatch;
+    }
+
+    /**
+     * @dev Find multiple matching lending offers for a borrowing request
+     * @param _loanCurrency The currency being borrowed
+     * @param _amount The amount needed to borrow
+     * @param _maxInterest Maximum interest rate the borrower is willing to pay
+     * @param _returnDuration The loan return duration
+     * @param _maxMatches Maximum number of matches to return
+     * @return matches Array of matched lending offer IDs
+     */
+    function findMultipleLendingOffers(
+        address _loanCurrency,
+        uint256 _amount,
+        uint16 _maxInterest,
+        uint256 _returnDuration,
+        uint8 _maxMatches
+    ) public view returns (uint96[] memory matches) {
+        LendingOffer[] memory offers = new LendingOffer[](
+            _appStorage.listingId
+        );
+        uint256 matchCount = 0;
+
+        // First pass: identify all eligible matches and calculate scores
+        for (uint96 i = 1; i <= _appStorage.listingId; i++) {
+            LoanListing memory listing = _appStorage.loanListings[i];
+
+            // Skip listings that don't meet basic criteria
+            if (listing.listingStatus != ListingStatus.OPEN) continue;
+            if (listing.tokenAddress != _loanCurrency) continue;
+            if (listing.interest > _maxInterest) continue;
+            if (listing.amount < _amount) continue;
+            if (_amount < listing.min_amount || _amount > listing.max_amount)
+                continue;
+            if (_returnDuration > block.timestamp + listing.returnDuration)
+                continue;
+
+            // Calculate match score
+            uint256 interestScore = (_maxInterest - listing.interest) * 1000;
+            uint256 durationScore = (listing.returnDuration * 100) /
+                (_returnDuration - block.timestamp);
+            uint256 amountScore = (listing.amount * 10) / _amount;
+
+            uint256 score = interestScore + durationScore + amountScore;
+
+            // Add to offers array
+            offers[matchCount] = LendingOffer({
+                listingId: i,
+                author: listing.author,
+                amount: listing.amount,
+                minAmount: listing.min_amount,
+                maxAmount: listing.max_amount,
+                interest: listing.interest,
+                returnDuration: listing.returnDuration,
+                tokenAddress: listing.tokenAddress,
+                score: score
+            });
+            matchCount++;
+        }
+
+        // Sort matches by score (simple bubble sort for on-chain efficiency)
+        if (matchCount > 1) {
+            for (uint256 i = 0; i < matchCount - 1; i++) {
+                for (uint256 j = 0; j < matchCount - i - 1; j++) {
+                    if (offers[j].score < offers[j + 1].score) {
+                        LendingOffer memory temp = offers[j];
+                        offers[j] = offers[j + 1];
+                        offers[j + 1] = temp;
+                    }
+                }
+            }
+        }
+
+        // Return the top matches up to _maxMatches
+        uint256 resultCount = matchCount < _maxMatches
+            ? matchCount
+            : _maxMatches;
+        matches = new uint96[](resultCount);
+
+        for (uint256 i = 0; i < resultCount; i++) {
+            matches[i] = offers[i].listingId;
+        }
+
+        return matches;
+    }
+
+    /**
+     * @dev Creates a new lending request and automatically attempts to match and service it from existing lending offers
+     * @param _amount The amount of loan requested by the borrower.
+     * @param _interest The interest rate for the loan.
+     * @param _returnDuration The expected return date for the loan.
+     * @param _expirationDate The expiration date of lending request if not serviced
+     * @param _loanCurrency The token address for the currency in which the loan is requested.
+     * @return requestId The ID of the created request
+     * @return matched Whether the request was automatically matched and serviced
+     */
+    function createAndMatchLendingRequest(
+        uint256 _amount,
+        uint16 _interest,
+        uint256 _returnDuration,
+        uint256 _expirationDate,
+        address _loanCurrency
+    ) external returns (uint96 requestId, bool matched) {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
+
+        // First, try to find the best matching lending offer
+        uint96 matchedListingId = findMatchingLendingOffer(
+            _loanCurrency,
+            _amount,
+            _interest,
+            _returnDuration
+        );
+
+        // If a matching offer is found, directly borrow from it without creating a request
+        if (matchedListingId > 0) {
+            // Use requestLoanFromListing to avoid code duplication
+            requestLoanFromListing(matchedListingId, _amount);
+
+            // The most recent request ID will be the one created in requestLoanFromListing
+            return (_appStorage.requestId, true);
+        }
+
+        // If no match found, create a regular lending request
+        // Create the lending request normally
+        Validator._moreThanZero(_amount);
+
+        // Check if the loan currency is allowed by validating it against allowed loanable tokens
+        if (!_appStorage.s_isLoanable[_loanCurrency]) {
+            revert Protocol__TokenNotLoanable();
+        }
+
+        if (_expirationDate < block.timestamp) {
+            revert Protocol__DateMustBeInFuture();
+        }
+
+        uint256 _duration = _returnDuration - block.timestamp;
+
+        // Ensure the return date is at least 1 day in the future
+        if (_duration < 1 days) {
+            revert Protocol__DateMustBeInFuture();
+        }
+
+        // Retrieve the loan currency's decimal precision
+        uint8 decimal = LibGettersImpl._getTokenDecimal(_loanCurrency);
+
+        // Calculate the USD equivalent of the loan amount
+        uint256 _loanUsdValue = LibGettersImpl._getUsdValue(
+            _appStorage,
+            _loanCurrency,
+            _amount,
+            decimal
+        );
+
+        // Ensure that the USD value of the loan is valid and meets minimum requirements
+        if (_loanUsdValue < 1) revert Protocol__InvalidAmount();
+
+        // Get the total USD collateral value for the borrower
+        uint256 collateralValueInLoanCurrency = LibGettersImpl
+            ._getAccountCollateralValue(_appStorage, msg.sender);
+
+        // Calculate the maximum loanable amount based on available collateral
+        uint256 maxLoanableAmount = Utils.maxLoanableAmount(
+            collateralValueInLoanCurrency
+        );
+
+        // Check if the loan exceeds the user's collateral allowance
+        if (
+            _appStorage.addressToUser[msg.sender].totalLoanCollected +
+                _loanUsdValue >=
+            maxLoanableAmount
+        ) {
+            revert Protocol__InsufficientCollateral();
+        }
+
+        // Retrieve collateral tokens associated with the borrower
+        address[] memory _collateralTokens = LibGettersImpl
+            ._getUserCollateralTokens(_appStorage, msg.sender);
+
+        // Increment the request ID and initialize the new loan request
+        _appStorage.requestId = _appStorage.requestId + 1;
+        Request storage _newRequest = _appStorage.request[
+            _appStorage.requestId
+        ];
+        _newRequest.requestId = _appStorage.requestId;
+        _newRequest.author = msg.sender;
+        _newRequest.amount = _amount;
+        _newRequest.interest = _interest;
+        _newRequest.returnDate = _returnDuration;
+        _newRequest.expirationDate = _expirationDate;
+        _newRequest.totalRepayment = Utils.calculateLoanInterest(
+            _amount,
+            _interest
+        );
+        _newRequest.loanRequestAddr = _loanCurrency;
+        _newRequest.collateralTokens = _collateralTokens;
+        _newRequest.status = Status.OPEN;
+
+        // Calculate the amount of collateral to lock based on the loan value
+        uint256 collateralToLock = Utils.calculateColateralToLock(
+            _loanUsdValue,
+            maxLoanableAmount
+        );
+
+        // For each collateral token, lock an appropriate amount based on its USD value
+        for (uint256 i = 0; i < _collateralTokens.length; i++) {
+            address token = _collateralTokens[i];
+            uint8 _decimalToken = LibGettersImpl._getTokenDecimal(token);
+            uint256 userBalance = _appStorage.s_addressToCollateralDeposited[
+                msg.sender
+            ][token];
+
+            // Calculate the amount to lock in USD for each token based on the proportional collateral
+            uint256 amountToLockUSD = (LibGettersImpl._getUsdValue(
+                _appStorage,
+                token,
+                userBalance,
+                _decimalToken
+            ) * collateralToLock) / 100;
+
+            // Convert USD amount to token amount and apply the correct decimal scaling
+            uint256 amountToLock = ((((amountToLockUSD) * 10) /
+                LibGettersImpl._getUsdValue(_appStorage, token, 10, 0)) *
+                (10 ** _decimalToken)) / (Constants.PRECISION);
+
+            // Store the locked amount for each collateral token
+            _appStorage.s_idToCollateralTokenAmount[_appStorage.requestId][
+                token
+            ] = amountToLock;
+        }
+
+        // Emit an event for the created loan request
+        emit Event.RequestCreated(
+            msg.sender,
+            _appStorage.requestId,
+            _amount,
+            _interest
+        );
+
+        return (_appStorage.requestId, false);
+    }
+
+    /**
+     * @dev Create a loan listing that auto-matches with existing borrowing requests
+     * @param _amount The total amount being loaned
+     * @param _min_amount The minimum amount a borrower can request
+     * @param _max_amount The maximum amount a borrower can request
+     * @param _returnDuration The date by which the loan should be repaid
+     * @param _interest The interest rate to be applied on the loan
+     * @param _loanCurrency The currency in which the loan is issued
+     * @param _autoMatch Whether to attempt to auto-match with existing borrowing requests
+     * @return listingId The ID of the created listing
+     * @return matchedRequests Array of request IDs that were automatically matched
+     */
+    function createLoanListingWithMatching(
+        uint256 _amount,
+        uint256 _min_amount,
+        uint256 _max_amount,
+        uint256 _returnDuration,
+        uint16 _interest,
+        address _loanCurrency,
+        bool _autoMatch
+    )
+        external
+        payable
+        returns (uint96 listingId, uint96[] memory matchedRequests)
+    {
+        // validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isP2pStopped);
+
+        // Create the loan listing first
+        // Validate that the amount is greater than zero and that a value has been sent if using native token
+        Validator._valueMoreThanZero(_amount, _loanCurrency, msg.value);
+        Validator._moreThanZero(_amount);
+
+        // Ensure the specified loan currency is a loanable token
+        if (!_appStorage.s_isLoanable[_loanCurrency]) {
+            revert Protocol__TokenNotLoanable();
+        }
+
+        // Check for sufficient balance and allowance if using a token other than native
+        if (_loanCurrency != Constants.NATIVE_TOKEN) {
+            if (IERC20(_loanCurrency).balanceOf(msg.sender) < _amount)
+                revert Protocol__InsufficientBalance();
+
+            if (
+                IERC20(_loanCurrency).allowance(msg.sender, address(this)) <
+                _amount
+            ) revert Protocol__InsufficientAllowance();
+        }
+
+        // If using the native token, set the amount to the value sent with the transaction
+        if (_loanCurrency == Constants.NATIVE_TOKEN) {
+            _amount = msg.value;
+        }
+
+        // Transfer the specified amount from the user to the contract if using a token
+        if (_loanCurrency != Constants.NATIVE_TOKEN) {
+            IERC20(_loanCurrency).safeTransferFrom(
+                msg.sender,
+                address(this),
+                _amount
+            );
+        }
+
+        // Increment the listing ID to create a new loan listing
+        _appStorage.listingId = _appStorage.listingId + 1;
+        LoanListing storage _newListing = _appStorage.loanListings[
+            _appStorage.listingId
+        ];
+
+        // Populate the loan listing struct with the provided details
+        _newListing.listingId = _appStorage.listingId;
+        _newListing.author = msg.sender;
+        _newListing.amount = _amount;
+        _newListing.min_amount = _min_amount;
+        _newListing.max_amount = _max_amount;
+        _newListing.interest = _interest;
+        _newListing.returnDuration = _returnDuration - block.timestamp;
+        _newListing.tokenAddress = _loanCurrency;
+        _newListing.listingStatus = ListingStatus.OPEN;
+
+        // Emit an event to notify that a new loan listing has been created
+        emit Event.LoanListingCreated(
+            _appStorage.listingId,
+            msg.sender,
+            _loanCurrency,
+            _amount
+        );
+
+        // If auto-matching is enabled, find compatible borrowing requests
+        if (_autoMatch) {
+            // Get all open borrowing requests for this currency
+            uint96[] memory potentialMatches = new uint96[](
+                _appStorage.requestId
+            );
+            uint256 matchCount = 0;
+
+            // Find all eligible requests
+            for (uint96 i = 1; i <= _appStorage.requestId; i++) {
+                Request memory req = _appStorage.request[i];
+
+                if (
+                    req.status == Status.OPEN &&
+                    req.loanRequestAddr == _loanCurrency &&
+                    req.interest >= _interest &&
+                    req.amount >= _min_amount &&
+                    req.amount <= _max_amount &&
+                    req.returnDate <=
+                    block.timestamp + _newListing.returnDuration &&
+                    req.expirationDate > block.timestamp &&
+                    req.author != msg.sender
+                ) {
+                    potentialMatches[matchCount] = i;
+                    matchCount++;
+                }
+            }
+
+            // Sort matches by highest interest rate first
+            if (matchCount > 1) {
+                for (uint256 i = 0; i < matchCount - 1; i++) {
+                    for (uint256 j = 0; j < matchCount - i - 1; j++) {
+                        if (
+                            _appStorage.request[potentialMatches[j]].interest <
+                            _appStorage
+                                .request[potentialMatches[j + 1]]
+                                .interest
+                        ) {
+                            uint96 temp = potentialMatches[j];
+                            potentialMatches[j] = potentialMatches[j + 1];
+                            potentialMatches[j + 1] = temp;
+                        }
+                    }
+                }
+            }
+
+            // Attempt to service requests until no more funds available
+            uint256 remainingAmount = _amount;
+            uint96[] memory matchedRequestsTemp = new uint96[](matchCount);
+            uint256 matchedCount = 0;
+
+            for (uint256 i = 0; i < matchCount && remainingAmount > 0; i++) {
+                uint96 requestId = potentialMatches[i];
+                Request memory req = _appStorage.request[requestId];
+
+                // Skip if we can't fulfill this request
+                if (req.amount > remainingAmount || req.amount < _min_amount) {
+                    continue;
+                }
+
+                // Service this request
+                try
+                    this.serviceRequest{
+                        value: (req.loanRequestAddr == Constants.NATIVE_TOKEN)
+                            ? req.amount
+                            : 0
+                    }(requestId, req.loanRequestAddr)
+                {
+                    // If successful, update remaining amount and track the match
+                    remainingAmount -= req.amount;
+                    _newListing.amount = remainingAmount;
+
+                    if (remainingAmount <= _newListing.max_amount) {
+                        _newListing.max_amount = remainingAmount;
+                    }
+
+                    if (remainingAmount <= _newListing.min_amount) {
+                        _newListing.min_amount = 0;
+                    }
+
+                    if (remainingAmount == 0) {
+                        _newListing.listingStatus = ListingStatus.CLOSED;
+                    }
+
+                    matchedRequestsTemp[matchedCount] = requestId;
+                    matchedCount++;
+                } catch {
+                    // If service failed, just skip this request
+                    continue;
+                }
+            }
+
+            // Create return array with exact size
+            matchedRequests = new uint96[](matchedCount);
+            for (uint256 i = 0; i < matchedCount; i++) {
+                matchedRequests[i] = matchedRequestsTemp[i];
+            }
+        } else {
+            // If auto-matching is disabled, return an empty array
+            matchedRequests = new uint96[](0);
+        }
+
+        return (_appStorage.listingId, matchedRequests);
+    }
+
+    function matchListing(
+        address _loanToken,
+        uint16 _interestRate,
+        uint256 _amount,
+        uint256 _duration
+    ) internal view returns (uint96) {
+        uint96 _totalListings = _appStorage.listingId;
+
+        for (uint96 _idx = 0; _idx < _totalListings; _idx++) {
+            LoanListing memory _listing = _appStorage.loanListings[_idx];
+
+            if (
+                (_loanToken == _listing.tokenAddress) &&
+                (_interestRate == _listing.interest) &&
+                (_amount <= _listing.amount) &&
+                (_duration <=
+                    block.timestamp + (_listing.returnDuration - 1 days))
+            ) {
+                return _listing.listingId;
+            }
+        }
+        return 0;
     }
 }

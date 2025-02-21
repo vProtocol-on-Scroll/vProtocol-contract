@@ -3,7 +3,8 @@ pragma solidity ^0.8.0;
 import "../model/Protocol.sol";
 
 library LibAppStorage {
-    bytes32 constant DIAMOND_STORAGE_POSITION = keccak256("diamond.standard.diamond.storage");
+    bytes32 constant DIAMOND_STORAGE_POSITION =
+        keccak256("diamond.standard.diamond.storage");
 
     struct Layout {
         /// @dev maps collateral token to their price feed
@@ -106,6 +107,16 @@ library LibAppStorage {
         address botAddress;
         /// @dev uniswap router address
         address swapRouter;
+        //  COREPOOLCONFIG STATE VARIABLES
+        // Vault Management
+        mapping(address => address) assetToVault; // assetAddress => vaultAddress
+        mapping(address => VaultConfig) s_vaultConfigs;
+        mapping(address => mapping(address => UserData)) s_userData; // user => vault => state
+        // Protocol Configuration
+        address s_protocolFeeRecipient;
+        uint256 s_protocolFeeBps; // Shared fee across all vaults
+        uint256 s_maxProtocolLTVBps;
+        bool paused;
         /// @dev failsafe to stop the contract from being used
         bool isP2pStopped;
         /// @dev protocol token
