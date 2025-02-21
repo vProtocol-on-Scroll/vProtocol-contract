@@ -2,8 +2,6 @@
 
 pragma solidity ^0.8.0;
 
-
-
 /******************************************************************************\
 
 * Author: Nick Mudge <nick@perfectabstractions.com> (https://twitter.com/mudgen)
@@ -16,8 +14,6 @@ pragma solidity ^0.8.0;
 
 /******************************************************************************/
 
-
-
 import {LibDiamond} from "./libraries/LibDiamond.sol";
 
 import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
@@ -26,22 +22,15 @@ import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 import "./utils/validators/Error.sol";
 
-
-
 import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 
 import "./utils/validators/Error.sol";
-
-
 
 contract Diamond {
     LibAppStorage.Layout internal _appStorage;
 
     constructor(address _contractOwner, address _diamondCutFacet) payable {
-
         LibDiamond.setContractOwner(_contractOwner);
-
-
 
         // Add the diamondCut external function from the diamondCutFacet
 
@@ -52,13 +41,9 @@ contract Diamond {
         functionSelectors[0] = IDiamondCut.diamondCut.selector;
 
         cut[0] = IDiamondCut.FacetCut({
-
             facetAddress: _diamondCutFacet,
-
             action: IDiamondCut.FacetCutAction.Add,
-
             functionSelectors: functionSelectors
-
         });
 
         LibDiamond.diamondCut(cut, address(0), "");
@@ -91,7 +76,6 @@ contract Diamond {
     // function if a facet is found and return any value.
 
     fallback() external payable {
-
         LibDiamond.DiamondStorage storage ds;
 
         bytes32 position = LibDiamond.DIAMOND_STORAGE_POSITION;
@@ -99,9 +83,7 @@ contract Diamond {
         // get diamond storage
 
         assembly {
-
             ds.slot := position
-
         }
 
         // get facet from function selector
@@ -113,7 +95,6 @@ contract Diamond {
         // Execute external function from facet using delegatecall and return any value.
 
         assembly {
-
             // copy function selector and any arguments
 
             calldatacopy(0, 0, calldatasize())
@@ -129,36 +110,20 @@ contract Diamond {
             // return any return value or error back to the caller
 
             switch result
-
             case 0 {
-
                 revert(0, returndatasize())
-
             }
-
             default {
-
                 return(0, returndatasize())
-
             }
-
         }
-
     }
-
-
 
     //immutable function example
 
     function example() public pure returns (string memory) {
-
         return "THIS IS AN EXAMPLE OF AN IMMUTABLE FUNCTION";
-
     }
 
-
-
     receive() external payable {}
-
 }
-
