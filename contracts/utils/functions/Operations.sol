@@ -17,9 +17,9 @@ import {ICrocSwapDex, ICrocImpact, ICrocQuery} from "../../interfaces/ICrocSwapD
 
 /**
  * @title Operations
- * @author LendBit Finance
+ * @author vProtocol
  *
- * Public write-only functions that allows writing into the state of LendBit
+ * Public write-only functions that allows writing into the state of vProtocol
  */
 contract Operations is AppStorage {
     event E(int128, int128);
