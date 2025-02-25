@@ -18,13 +18,8 @@ import {LibDiamond} from "./libraries/LibDiamond.sol";
 
 import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
 import {LibAppStorage} from "./libraries/LibAppStorage.sol";
-
-import {LibAppStorage} from "./libraries/LibAppStorage.sol";
 import "./utils/validators/Error.sol";
-
-import {LibAppStorage} from "./libraries/LibAppStorage.sol";
-
-import "./utils/validators/Error.sol";
+import {TokenData} from "./model/Protocol.sol";
 
 contract Diamond {
     LibAppStorage.Layout internal _appStorage;
@@ -64,9 +59,20 @@ contract Diamond {
         }
 
         for (uint8 i = 0; i < _tokens.length; i++) {
+            _appStorage.tokenData[_tokens[i]] = TokenData({
+                poolLiquidity: 0,
+                p2pLiquidity: 0,
+                totalDeposits: 0,
+                totalBorrows: 0,
+                normalizedPoolDebt: 0,
+                lastUpdateTimestamp: 0,
+                isLoanable: true,
+                priceFeed: _priceFeeds[i],
+                vault: address(0)
+            });
+            _appStorage.s_collateralToken.push(_tokens[i]);
             _appStorage.s_isLoanable[_tokens[i]] = true;
             _appStorage.s_priceFeeds[_tokens[i]] = _priceFeeds[i];
-            _appStorage.s_collateralToken.push(_tokens[i]);
         }
         _appStorage.protocolToken = _protocolToken;
     }

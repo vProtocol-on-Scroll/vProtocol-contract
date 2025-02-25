@@ -22,351 +22,188 @@ import {ICrocSwapDex, ICrocImpact, ICrocQuery} from "../../interfaces/ICrocSwapD
  * Public write-only functions that allows writing into the state of vProtocol
  */
 contract Operations is AppStorage {
-    event E(int128, int128);
+
     using SafeERC20 for IERC20;
 
+    event E(int128, int128);
+
     /**
-     * @dev Allows users to deposit collateral of a specified token into the protocol. Supports both
-     *      native and ERC-20 token collateral deposits.
-     *
-     * @param _tokenCollateralAddress The address of the token being deposited as collateral.
-     * @param _amountOfCollateral The amount of the token to deposit as collateral.
-     *
-     * Requirements:
-     * - `_amountOfCollateral` must be greater than zero.
-     * - `_tokenCollateralAddress` must be an allowed token (i.e., have a non-zero price feed).
-     *
-     * If the deposit is in the native token, `_amountOfCollateral` is set to `msg.value`.
-     * The function updates the collateral and available balance mappings for the sender, and if
-     * the collateral is an ERC-20 token, it transfers `_amountOfCollateral` from the sender to the contract.
-     * Emits a `CollateralDeposited` event on successful deposit.
+     * @dev Allows users to deposit collateral of a specified token into the protocol.
+     * @param token The address of the token being deposited as collateral.
+     * @param amount The amount of the token to deposit as collateral.
      */
     function depositCollateral(
-        address _tokenCollateralAddress,
-        uint256 _amountOfCollateral
+        address token,
+        uint256 amount
     ) external payable {
-        // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
-        // Validate the input parameters: `_amountOfCollateral` must be greater than zero,
-        // and `_tokenCollateralAddress` must have a valid price feed (non-zero address).
-        Validator._valueMoreThanZero(
-            _amountOfCollateral,
-            _tokenCollateralAddress,
-            msg.value
-        );
-        Validator._isTokenAllowed(
-            _appStorage.s_priceFeeds[_tokenCollateralAddress]
-        );
-
-        // Determine if the collateral is the native token
-        bool _isNativeToken = _tokenCollateralAddress == Constants.NATIVE_TOKEN;
-
-        // Set `_amountOfCollateral` to `msg.value` if it's a native token deposit
-        if (_isNativeToken) {
-            _amountOfCollateral = msg.value;
+        // Validate transaction is not stopped
+        Validator._isP2pStopped(_appStorage.isPaused);
+        
+        // Validate inputs
+        Validator._moreThanZero(amount);
+        Validator._isTokenAllowed(_appStorage.tokenData[token].priceFeed);
+        
+        // Handle native token deposits
+        bool isNativeToken = token == Constants.NATIVE_TOKEN;
+        if (isNativeToken) {
+            amount = msg.value;
         }
 
-        // Update the user's collateral and available balance in storage
-        _appStorage.s_addressToCollateralDeposited[msg.sender][
-            _tokenCollateralAddress
-        ] += _amountOfCollateral;
-        _appStorage.s_addressToAvailableBalance[msg.sender][
-            _tokenCollateralAddress
-        ] += _amountOfCollateral;
+        // Update user position
+        UserPosition storage position = _appStorage.userPositions[msg.sender];
+        position.collateral[token] += amount;
+        position.lastUpdate = block.timestamp;
 
-        // Transfer ERC-20 tokens from the sender to the contract if not the native token
-        if (!_isNativeToken) {
-            IERC20(_tokenCollateralAddress).safeTransferFrom(
-                msg.sender,
-                address(this),
-                _amountOfCollateral
-            );
+        // Handle token transfer
+        if (!isNativeToken) {
+            IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         }
 
-        // Emit an event for the collateral deposit
-        emit Event.CollateralDeposited(
-            msg.sender,
-            _tokenCollateralAddress,
-            _amountOfCollateral
-        );
+        emit Event.CollateralDeposited(msg.sender, token, amount);
     }
 
     /**
-     * @dev Creates a new lending request by validating input parameters, calculating loanable amounts,
-     *      and locking collateral proportional to the loan request.
-     *
-     * @param _amount The amount of loan requested by the borrower.
-     * @param _interest The interest rate for the loan.
-     * @param _returnDuration The expected return date for the loan.
-     * @param _expirationDate The expiration date of lending request if not serviced
-     * @param _loanCurrency The token address for the currency in which the loan is requested.
-     *
-     * Requirements:
-     * - `_amount` must be greater than zero.
-     * - `_loanCurrency` must be an approved loanable token.
-     * - `_returnDate` must be at least 1 day in the future.
-     * - The calculated USD value of `_amount` should meet the minimum loan amount requirement.
-     * - Borrower must have sufficient collateral based on their collateral value and `_loanUsdValue`.
-     *
-     * The function locks collateral based on the proportional USD value of each token in the borrower’s
-     * collateral, calculates the total repayment including interest, and stores loan request data.
-     * Emits a `RequestCreated` event on successful request creation.
+     * @dev Creates a new P2P lending request
+     * @param amount The amount of loan requested
+     * @param interest The interest rate for the loan
+     * @param returnDuration The expected return date
+     * @param expirationDate The expiration date of the request
+     * @param loanToken The token address for the loan
      */
     function createLendingRequest(
-        uint256 _amount,
-        uint16 _interest,
-        uint256 _returnDuration,
-        uint256 _expirationDate,
-        address _loanCurrency
+        uint256 amount,
+        uint16 interest,
+        uint256 returnDuration,
+        uint256 expirationDate,
+        address loanToken
     ) external {
-        // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
-        // Validate that the loan amount is greater than zero
-        Validator._moreThanZero(_amount);
+        Validator._isP2pStopped(_appStorage.isPaused);
+        require(amount > 0, "Amount must be greater than 0");
+        require(_appStorage.tokenData[loanToken].isLoanable, "Token not loanable");
+        require(expirationDate > block.timestamp, "Invalid expiration");
+        require(returnDuration > block.timestamp + 1 days, "Invalid duration");
 
-        // Check if the loan currency is allowed by validating it against allowed loanable tokens
-        if (!_appStorage.s_isLoanable[_loanCurrency]) {
-            revert Protocol__TokenNotLoanable();
-        }
-
-        if (_expirationDate < block.timestamp) {
-            revert Protocol__DateMustBeInFuture();
-        }
-
-        uint256 _duration = _returnDuration - block.timestamp;
-
-        // Ensure the return date is at least 1 day in the future
-        if (_duration < 1 days) {
-            revert Protocol__DateMustBeInFuture();
-        }
-
-        // Retrieve the loan currency's decimal precision
-        uint8 decimal = LibGettersImpl._getTokenDecimal(_loanCurrency);
-
-        // Calculate the USD equivalent of the loan amount
-        uint256 _loanUsdValue = LibGettersImpl._getUsdValue(
+        // Calculate USD values
+        uint8 decimal = LibGettersImpl._getTokenDecimal(loanToken);
+        uint256 loanUsdValue = LibGettersImpl._getUsdValue(
             _appStorage,
-            _loanCurrency,
-            _amount,
+            loanToken,
+            amount,
             decimal
         );
+        require(loanUsdValue >= Constants.MIN_LOAN_VALUE_USD, "Loan value too small");
 
-        // Ensure that the USD value of the loan is valid and meets minimum requirements
-        if (_loanUsdValue < 1) revert Protocol__InvalidAmount();
-
-        // Get the total USD collateral value for the borrower
-        uint256 collateralValueInLoanCurrency = LibGettersImpl
-            ._getAccountCollateralValue(_appStorage, msg.sender);
-
-        // Calculate the maximum loanable amount based on available collateral
-        uint256 maxLoanableAmount = Utils.maxLoanableAmount(
-            collateralValueInLoanCurrency
-        );
-
-        // Check if the loan exceeds the user's collateral allowance
-        if (
-            _appStorage.addressToUser[msg.sender].totalLoanCollected +
-                _loanUsdValue >=
-            maxLoanableAmount
-        ) {
-            revert Protocol__InsufficientCollateral();
-        }
-
-        // Retrieve collateral tokens associated with the borrower
-        address[] memory _collateralTokens = LibGettersImpl
-            ._getUserCollateralTokens(_appStorage, msg.sender);
-
-        // Increment the request ID and initialize the new loan request
-        _appStorage.requestId = _appStorage.requestId + 1;
-        Request storage _newRequest = _appStorage.request[
-            _appStorage.requestId
-        ];
-        _newRequest.requestId = _appStorage.requestId;
-        _newRequest.author = msg.sender;
-        _newRequest.amount = _amount;
-        _newRequest.interest = _interest;
-        _newRequest.returnDate = _returnDuration;
-        _newRequest.expirationDate = _expirationDate;
-        _newRequest.totalRepayment = Utils.calculateLoanInterest(
-            _amount,
-            _interest
-        );
-        _newRequest.loanRequestAddr = _loanCurrency;
-        _newRequest.collateralTokens = _collateralTokens;
-        _newRequest.status = Status.OPEN;
-
-        // Calculate the amount of collateral to lock based on the loan value
-        uint256 collateralToLock = Utils.calculateColateralToLock(
-            _loanUsdValue,
-            maxLoanableAmount
-        );
-
-        // For each collateral token, lock an appropriate amount based on its USD value
-        for (uint256 i = 0; i < _collateralTokens.length; i++) {
-            address token = _collateralTokens[i];
-            uint8 _decimalToken = LibGettersImpl._getTokenDecimal(token);
-            uint256 userBalance = _appStorage.s_addressToCollateralDeposited[
-                msg.sender
-            ][token];
-
-            // Calculate the amount to lock in USD for each token based on the proportional collateral
-            uint256 amountToLockUSD = (LibGettersImpl._getUsdValue(
-                _appStorage,
-                token,
-                userBalance,
-                _decimalToken
-            ) * collateralToLock) / 100;
-
-            // Convert USD amount to token amount and apply the correct decimal scaling
-            uint256 amountToLock = ((((amountToLockUSD) * 10) /
-                LibGettersImpl._getUsdValue(_appStorage, token, 10, 0)) *
-                (10 ** _decimalToken)) / (Constants.PRECISION);
-
-            // Store the locked amount for each collateral token
-            _appStorage.s_idToCollateralTokenAmount[_appStorage.requestId][
-                token
-            ] = amountToLock;
-        }
-
-        // Emit an event for the created loan request
-        emit Event.RequestCreated(
+        // Check borrower's health factor
+        uint256 healthFactor = LibGettersImpl._healthFactor(
+            _appStorage,
             msg.sender,
-            _appStorage.requestId,
-            _amount,
-            _interest
+            loanUsdValue
         );
+        require(healthFactor >= Constants.MIN_HEALTH_FACTOR, "Insufficient collateral");
+
+        // Create new request
+        uint96 requestId = _appStorage.requestId + 1;
+        _appStorage.requestId = requestId;
+
+        Request storage newRequest = _appStorage.requests[requestId];
+        newRequest.requestId = requestId;
+        newRequest.author = msg.sender;
+        newRequest.amount = amount;
+        newRequest.interest = interest;
+        newRequest.returnDate = returnDuration;
+        newRequest.expirationDate = expirationDate;
+        newRequest.totalRepayment = Utils.calculateLoanInterest(amount, interest);
+        newRequest.loanRequestAddr = loanToken;
+        newRequest.status = Status.OPEN;
+
+        // Lock collateral proportionally
+        _lockCollateralForRequest(requestId, loanUsdValue);
+
+        emit Event.RequestCreated(msg.sender, requestId, amount, interest);
     }
 
     /**
-     * @dev Services a lending request by transferring funds from the lender to the borrower and updating request status.
-     * @param _requestId The ID of the lending request to service.
-     * @param _tokenAddress The address of the token to be used for funding.
-     *
-     * Requirements:
-     * - `_tokenAddress` must be the native token or the lender must have approved sufficient balance of the specified token.
-     * - Request must be open, not expired, and authored by someone other than the lender.
-     * - Lender must have sufficient balance and allowance for ERC20 tokens, or sufficient msg.value for native tokens.
-     * - The borrower's collateral must have a healthy factor after the loan is funded.
-     *
-     * Emits a `RequestServiced` event upon successful funding.
+     * @dev Services a lending request by transferring funds
+     * @param requestId The ID of the lending request
+     * @param token The token address for the loan
      */
     function serviceRequest(
-        uint96 _requestId,
-        address _tokenAddress
+        uint96 requestId,
+        address token
     ) external payable {
-        // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
-        // Validate if native token is being used and msg.value is non-zero
-        Validator._nativeMoreThanZero(_tokenAddress, msg.value);
+        Validator._isP2pStopped(_appStorage.isPaused);
+        
+        Request storage request = _appStorage.requests[requestId];
+        require(request.status == Status.OPEN, "Request not open");
+        require(request.expirationDate > block.timestamp, "Request expired");
+        require(request.loanRequestAddr == token, "Invalid token");
+        require(request.author != msg.sender, "Cannot fund self");
 
-        // Load the request from storage
-        Request storage _foundRequest = _appStorage.request[_requestId];
+        uint256 amount = request.amount;
+        bool isNativeToken = token == Constants.NATIVE_TOKEN;
 
-        // Ensure the request status is open and has not expired
-        if (_foundRequest.status != Status.OPEN)
-            revert Protocol__RequestNotOpen();
-        if (_foundRequest.expirationDate <= block.timestamp)
-            revert Protocol__RequestNotOpen();
-        if (_foundRequest.loanRequestAddr != _tokenAddress)
-            revert Protocol__InvalidToken();
-        if (_foundRequest.author == msg.sender) revert Protocol__CantFundSelf();
+        // Validate lender's balance
+        if (isNativeToken) {
+            require(msg.value >= amount, "Insufficient amount");
+        } else {
+            require(IERC20(token).balanceOf(msg.sender) >= amount, "Insufficient balance");
+            require(IERC20(token).allowance(msg.sender, address(this)) >= amount, "Insufficient allowance");
+        }
 
-        // Update lender and request status to indicate servicing
-        _foundRequest.lender = msg.sender;
-        _foundRequest.status = Status.SERVICED;
-        uint256 amountToLend = _foundRequest.amount;
+        // Update request status
+        request.lender = msg.sender;
+        request.status = Status.SERVICED;
 
-        // Validate lender's balance and allowance if using ERC20 token, or msg.value if using native token
-        if (_tokenAddress == Constants.NATIVE_TOKEN) {
-            if (msg.value < amountToLend) {
-                revert Protocol__InsufficientAmount();
+        // Update positions
+        UserPosition storage borrowerPosition = _appStorage.userPositions[request.author];
+        borrowerPosition.p2pBorrowedAmount[token] += amount;
+        borrowerPosition.lastUpdate = block.timestamp;
+
+        // Transfer tokens
+        if (isNativeToken) {
+            if (msg.value > amount) {
+                payable(msg.sender).transfer(msg.value - amount);
             }
+            payable(request.author).transfer(amount);
         } else {
-            if (IERC20(_tokenAddress).balanceOf(msg.sender) < amountToLend)
-                revert Protocol__InsufficientBalance();
-            if (
-                IERC20(_tokenAddress).allowance(msg.sender, address(this)) <
-                amountToLend
-            ) revert Protocol__InsufficientAllowance();
+            IERC20(token).safeTransferFrom(msg.sender, request.author, amount);
         }
 
-        // Get token's decimal value and calculate the loan's USD equivalent
-        uint8 _decimalToken = LibGettersImpl._getTokenDecimal(_tokenAddress);
-        uint256 _loanUsdValue = LibGettersImpl._getUsdValue(
+        emit Event.RequestServiced(requestId, msg.sender, request.author, amount);
+    }
+
+    /**
+     * @dev Internal function to lock collateral for a loan request
+     */
+    function _lockCollateralForRequest(uint96 requestId, uint256 loanUsdValue) internal {
+        UserPosition storage position = _appStorage.userPositions[msg.sender];
+        uint256 totalCollateralUSD = LibGettersImpl._getAccountCollateralValue(
             _appStorage,
-            _tokenAddress,
-            amountToLend,
-            _decimalToken
+            msg.sender
         );
+        uint256 collateralToLock = (loanUsdValue * Constants.MAX_LTV) / Constants.PERCENTAGE_FACTOR;
 
-        // Calculate the total repayment amount including interest
-        uint256 _totalRepayment = amountToLend +
-            Utils.calculateLoanInterest(
-                _foundRequest.amount,
-                _foundRequest.interest
-            );
-        _foundRequest.totalRepayment = _totalRepayment;
-
-        // Update total loan collected in USD for the borrower
-        _appStorage
-            .addressToUser[_foundRequest.author]
-            .totalLoanCollected += LibGettersImpl._getUsdValue(
-            _appStorage,
-            _tokenAddress,
-            _totalRepayment,
-            _decimalToken
-        );
-
-        // Validate borrower's collateral health factor after loan
-        if (
-            LibGettersImpl._healthFactor(
-                _appStorage,
-                _foundRequest.author,
-                _loanUsdValue
-            ) < 1
-        ) {
-            revert Protocol__InsufficientCollateral();
-        }
-
-        // Lock collateral amounts in the specified tokens for the request
-        for (uint i = 0; i < _foundRequest.collateralTokens.length; i++) {
-            _appStorage.s_addressToAvailableBalance[_foundRequest.author][
-                _foundRequest.collateralTokens[i]
-            ] -= _appStorage.s_idToCollateralTokenAmount[_requestId][
-                _foundRequest.collateralTokens[i]
-            ];
-        }
-
-        // Transfer loan amount to borrower based on token type
-        if (_tokenAddress != Constants.NATIVE_TOKEN) {
-            IERC20(_tokenAddress).safeTransferFrom(
-                msg.sender,
-                _foundRequest.author,
-                amountToLend
-            );
-        } else {
-            (bool sent, ) = payable(_foundRequest.author).call{
-                value: amountToLend
-            }("");
-
-            if (!sent) revert Protocol__TransferFailed();
-        }
-
-        if (_tokenAddress == Constants.NATIVE_TOKEN) {
-            if (msg.value > amountToLend) {
-                uint256 _refund = msg.value - amountToLend;
-                (bool sent, ) = payable(msg.sender).call{value: _refund}("");
-                if (!sent) revert Protocol__TransferFailed();
+        uint256 totalLocked = 0;
+        for (uint256 i = 0; i < _appStorage.s_supportedTokens.length; i++) {
+            address token = _appStorage.s_supportedTokens[i];
+            uint256 collateralAmount = position.collateral[token];
+            
+            if (collateralAmount > 0) {
+                uint8 decimal = LibGettersImpl._getTokenDecimal(token);
+                uint256 collateralUSD = LibGettersImpl._getUsdValue(
+                    _appStorage,
+                    token,
+                    collateralAmount,
+                    decimal
+                );
+                uint256 amountToLock = (collateralAmount * collateralToLock) / totalCollateralUSD;
+                
+                _appStorage.s_idToCollateralTokenAmount[requestId][token] = amountToLock;
+                totalLocked += (amountToLock * collateralUSD) / (10 ** decimal);
             }
         }
 
-        // Emit an event indicating successful servicing of the request
-        emit Event.RequestServiced(
-            _requestId,
-            msg.sender,
-            _foundRequest.author,
-            amountToLend
-        );
+        require(totalLocked >= collateralToLock, "Insufficient collateral locked");
     }
 
     /**
@@ -383,20 +220,18 @@ contract Operations is AppStorage {
      */
     function withdrawCollateral(
         address _tokenCollateralAddress,
-        uint128 _amount
+        uint256 _amount
     ) external {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
         // Validate that the token is allowed and the amount is greater than zero
         Validator._isTokenAllowed(
-            _appStorage.s_priceFeeds[_tokenCollateralAddress]
+            _appStorage.tokenData[_tokenCollateralAddress].priceFeed
         );
         Validator._moreThanZero(_amount);
 
         // Retrieve the user's deposited amount for the specified token
-        uint256 depositedAmount = _appStorage.s_addressToAvailableBalance[
-            msg.sender
-        ][_tokenCollateralAddress];
+        uint256 depositedAmount = _appStorage.userPositions[msg.sender].collateral[_tokenCollateralAddress];
 
         // Check if the user has sufficient collateral to withdraw the requested amount
         if (depositedAmount < _amount) {
@@ -404,12 +239,8 @@ contract Operations is AppStorage {
         }
 
         // Update storage to reflect the withdrawal of collateral
-        _appStorage.s_addressToCollateralDeposited[msg.sender][
-            _tokenCollateralAddress
-        ] -= _amount;
-        _appStorage.s_addressToAvailableBalance[msg.sender][
-            _tokenCollateralAddress
-        ] -= _amount;
+        _appStorage.userPositions[msg.sender].collateral[_tokenCollateralAddress] -= _amount;
+        _appStorage.userPositions[msg.sender].lastUpdate = block.timestamp;
 
         // Handle withdrawal for native token vs ERC20 tokens
         if (_tokenCollateralAddress == Constants.NATIVE_TOKEN) {
@@ -454,14 +285,14 @@ contract Operations is AppStorage {
 
         // Loop through each token to set its price feed and add it to the collateral list
         for (uint8 i = 0; i < _tokens.length; i++) {
-            _appStorage.s_priceFeeds[_tokens[i]] = _priceFeeds[i]; // Map token to price feed
-            _appStorage.s_collateralToken.push(_tokens[i]); // Add token to collateral array
+            _appStorage.tokenData[_tokens[i]].priceFeed = _priceFeeds[i]; // Map token to price feed
+            _appStorage.s_supportedTokens.push(_tokens[i]); // Add token to collateral array
         }
 
         // Emit an event indicating the updated number of collateral tokens
         emit Event.UpdatedCollateralTokens(
             msg.sender,
-            uint8(_appStorage.s_collateralToken.length)
+            uint8(_appStorage.s_supportedTokens.length)
         );
     }
 
@@ -480,19 +311,16 @@ contract Operations is AppStorage {
 
         // Loop through each token to remove it from collateral and reset its price feed
         for (uint8 i = 0; i < _tokens.length; i++) {
-            _appStorage.s_priceFeeds[_tokens[i]] = address(0); // Remove the price feed for the token
+            _appStorage.tokenData[_tokens[i]].priceFeed = address(0); // Remove the price feed for the token
 
             // Search for the token in the collateral array
-            for (uint8 j = 0; j < _appStorage.s_collateralToken.length; j++) {
-                if (_appStorage.s_collateralToken[j] == _tokens[i]) {
+            for (uint8 j = 0; j < _appStorage.s_supportedTokens.length; j++) {
+                if (_appStorage.s_supportedTokens[j] == _tokens[i]) {
                     // Replace the token to be removed with the last token in the array
-                    _appStorage.s_collateralToken[j] = _appStorage
-                        .s_collateralToken[
-                            _appStorage.s_collateralToken.length - 1
-                        ];
+                    _appStorage.s_supportedTokens[j] = _appStorage.s_supportedTokens[_appStorage.s_supportedTokens.length - 1];
 
                     // Remove the last token from the array
-                    _appStorage.s_collateralToken.pop();
+                    _appStorage.s_supportedTokens.pop();
                     break; // Stop searching once the token is found and removed
                 }
             }
@@ -501,7 +329,7 @@ contract Operations is AppStorage {
         // Emit an event indicating the updated count of collateral tokens
         emit Event.UpdatedCollateralTokens(
             msg.sender,
-            uint8(_appStorage.s_collateralToken.length)
+            uint8(_appStorage.s_supportedTokens.length)
         );
     }
 
@@ -520,13 +348,13 @@ contract Operations is AppStorage {
         LibDiamond.enforceIsContractOwner();
 
         // Mark the token as loanable
-        _appStorage.s_isLoanable[_token] = true;
+        _appStorage.tokenData[_token].isLoanable = true;
 
         // Associate the token with its price feed
-        _appStorage.s_priceFeeds[_token] = _priceFeed;
+        _appStorage.tokenData[_token].priceFeed = _priceFeed;
 
         // Add the loanable token to the list of loanable tokens
-        _appStorage.s_loanableToken.push(_token);
+        _appStorage.s_supportedTokens.push(_token);
 
         // Emit an event to notify that a loanable token has been added
         emit Event.UpdateLoanableToken(_token, _priceFeed, msg.sender);
@@ -545,7 +373,7 @@ contract Operations is AppStorage {
      */
     function closeListingAd(uint96 _listingId) external {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
 
         // Retrieve the loan listing associated with the given listing ID
         LoanListing storage _newListing = _appStorage.loanListings[_listingId];
@@ -597,10 +425,10 @@ contract Operations is AppStorage {
      */
     function closeRequest(uint96 _requestId) external {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
 
         // Retrieve the lending request associated with the given request ID
-        Request storage _foundRequest = _appStorage.request[_requestId];
+        Request storage _foundRequest = _appStorage.requests[_requestId];
 
         // Check if the request is OPEN; revert if it's not
         if (_foundRequest.status != Status.OPEN)
@@ -642,13 +470,13 @@ contract Operations is AppStorage {
         address _loanCurrency
     ) external payable {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
         // Validate that the amount is greater than zero and that a value has been sent if using native token
         Validator._valueMoreThanZero(_amount, _loanCurrency, msg.value);
         Validator._moreThanZero(_amount);
 
         // Ensure the specified loan currency is a loanable token
-        if (!_appStorage.s_isLoanable[_loanCurrency]) {
+        if (!_appStorage.tokenData[_loanCurrency].isLoanable) {
             revert Protocol__TokenNotLoanable();
         }
 
@@ -678,13 +506,12 @@ contract Operations is AppStorage {
         }
 
         // Increment the listing ID to create a new loan listing
-        _appStorage.listingId = _appStorage.listingId + 1;
-        LoanListing storage _newListing = _appStorage.loanListings[
-            _appStorage.listingId
-        ];
+        uint96 listingId = _appStorage.listingId + 1;
+        _appStorage.listingId = listingId;
+        LoanListing storage _newListing = _appStorage.loanListings[listingId];
 
         // Populate the loan listing struct with the provided details
-        _newListing.listingId = _appStorage.listingId;
+        _newListing.listingId = listingId;
         _newListing.author = msg.sender;
         _newListing.amount = _amount;
         _newListing.min_amount = _min_amount;
@@ -696,7 +523,7 @@ contract Operations is AppStorage {
 
         // Emit an event to notify that a new loan listing has been created
         emit Event.LoanListingCreated(
-            _appStorage.listingId,
+            listingId,
             msg.sender,
             _loanCurrency,
             _amount
@@ -719,7 +546,7 @@ contract Operations is AppStorage {
      */
     function requestLoanFromListing(uint96 _listingId, uint256 _amount) public {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
         Validator._moreThanZero(_amount);
 
         LoanListing storage _listing = _appStorage.loanListings[_listingId];
@@ -758,8 +585,10 @@ contract Operations is AppStorage {
         }
 
         // Calculate max loanable amount based on collateral value
-        uint256 collateralValueInLoanCurrency = LibGettersImpl
-            ._getAccountCollateralValue(_appStorage, msg.sender);
+        uint256 collateralValueInLoanCurrency = LibGettersImpl._getAccountCollateralValue(
+            _appStorage,
+            msg.sender
+        );
         uint256 maxLoanableAmount = Utils.maxLoanableAmount(
             collateralValueInLoanCurrency
         );
@@ -772,15 +601,16 @@ contract Operations is AppStorage {
         if (_listing.amount == 0) _listing.listingStatus = ListingStatus.CLOSED;
 
         // Retrieve the borrower's collateral tokens for collateralization
-        address[] memory _collateralTokens = LibGettersImpl
-            ._getUserCollateralTokens(_appStorage, msg.sender);
+        address[] memory _collateralTokens = LibGettersImpl._getUserCollateralTokens(
+            _appStorage,
+            msg.sender
+        );
 
         // Create a new loan request with a unique ID
-        _appStorage.requestId = _appStorage.requestId + 1;
-        Request storage _newRequest = _appStorage.request[
-            _appStorage.requestId
-        ];
-        _newRequest.requestId = _appStorage.requestId;
+        uint96 requestId = _appStorage.requestId + 1;
+        _appStorage.requestId = requestId;
+        Request storage _newRequest = _appStorage.requests[requestId];
+        _newRequest.requestId = requestId;
         _newRequest.author = msg.sender;
         _newRequest.lender = _listing.author;
         _newRequest.amount = _amount;
@@ -802,9 +632,7 @@ contract Operations is AppStorage {
         for (uint256 i = 0; i < _collateralTokens.length; i++) {
             address token = _collateralTokens[i];
             uint8 decimal = LibGettersImpl._getTokenDecimal(token);
-            uint256 userBalance = _appStorage.s_addressToCollateralDeposited[
-                msg.sender
-            ][token];
+            uint256 userBalance = _appStorage.userPositions[msg.sender].collateral[token];
 
             uint256 amountToLockUSD = (LibGettersImpl._getUsdValue(
                 _appStorage,
@@ -814,25 +642,22 @@ contract Operations is AppStorage {
             ) * collateralToLock) / 100;
 
             uint256 amountToLock = ((((amountToLockUSD) * 10) /
-                LibGettersImpl._getUsdValue(_appStorage, token, 10, 0)) *
-                (10 ** _decimalToken)) / (Constants.PRECISION);
+                LibGettersImpl._getUsdValue(
+                    _appStorage,
+                    token,
+                    10,
+                    0
+                )) *
+                (10 ** decimal)) / (Constants.PRECISION);
 
-            _appStorage.s_idToCollateralTokenAmount[_appStorage.requestId][
-                token
-            ] = amountToLock;
-            _appStorage.s_addressToAvailableBalance[msg.sender][
-                token
-            ] -= amountToLock;
+            _appStorage.s_idToCollateralTokenAmount[requestId][token] = amountToLock;
+            _appStorage.userPositions[msg.sender].collateral[token] -= amountToLock;
         }
 
         // Update borrower's total loan collected in USD
-        _appStorage
-            .addressToUser[msg.sender]
-            .totalLoanCollected += LibGettersImpl._getUsdValue(
+        _appStorage.userPositions[msg.sender].totalLoanCollectedUSD += LibGettersImpl._getLoanCollectedInUsd(
             _appStorage,
-            _listing.tokenAddress,
-            _newRequest.totalRepayment,
-            _decimalToken
+            msg.sender
         );
 
         // Transfer the loan amount to the borrower
@@ -846,12 +671,12 @@ contract Operations is AppStorage {
         // Emit events to notify the loan request creation and servicing
         emit Event.RequestCreated(
             msg.sender,
-            _appStorage.requestId,
+            requestId,
             _amount,
             _listing.interest
         );
         emit Event.RequestServiced(
-            _newRequest.requestId,
+            requestId,
             _newRequest.lender,
             _newRequest.author,
             _amount
@@ -874,10 +699,10 @@ contract Operations is AppStorage {
      */
     function repayLoan(uint96 _requestId, uint256 _amount) external payable {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
         Validator._moreThanZero(_amount);
 
-        Request storage _request = _appStorage.request[_requestId];
+        Request storage _request = _appStorage.requests[_requestId];
 
         // Ensure that the loan request is currently serviced and the caller is the original borrower
         if (_request.status != Status.SERVICED)
@@ -905,18 +730,14 @@ contract Operations is AppStorage {
 
             for (uint i = 0; i < _request.collateralTokens.length; i++) {
                 address collateralToken = _request.collateralTokens[i];
-                _appStorage.s_addressToAvailableBalance[_request.author][
-                    collateralToken
-                ] += _appStorage.s_idToCollateralTokenAmount[_requestId][
-                    collateralToken
-                ];
+                _appStorage.userPositions[msg.sender].collateral[collateralToken] += _appStorage.s_idToCollateralTokenAmount[_requestId][collateralToken];
             }
         } else {
             // Reduce the outstanding repayment amount for partial payments
             _request.totalRepayment -= _amount;
         }
 
-        // Update borrower’s loan collected metrics in USD
+        // Update borrower's loan collected metrics in USD
         uint8 decimal = LibGettersImpl._getTokenDecimal(
             _request.loanRequestAddr
         );
@@ -928,24 +749,18 @@ contract Operations is AppStorage {
         );
         uint256 loanCollected = LibGettersImpl._getLoanCollectedInUsd(
             _appStorage,
-            msg.sender
-        );
-
+            msg.sender);
         // Deposit the repayment amount to the lender's available balance
-        _appStorage.s_addressToCollateralDeposited[_request.lender][
-            _request.loanRequestAddr
-        ] += _amount;
-        _appStorage.s_addressToAvailableBalance[_request.lender][
-            _request.loanRequestAddr
-        ] += _amount;
+        _appStorage.userPositions[msg.sender].collateral[_request.loanRequestAddr] += _amount;
+        _appStorage.userPositions[msg.sender].totalLoanCollectedUSD += _loanUsdValue;
 
         // Adjust the borrower's total loan collected
         if (loanCollected > _loanUsdValue) {
-            _appStorage.addressToUser[msg.sender].totalLoanCollected =
+            _appStorage.userPositions[msg.sender].totalLoanCollectedUSD =
                 loanCollected -
                 _loanUsdValue;
         } else {
-            _appStorage.addressToUser[msg.sender].totalLoanCollected = 0;
+            _appStorage.userPositions[msg.sender].totalLoanCollectedUSD = 0;
         }
 
         // Emit event to notify of loan repayment
@@ -973,229 +788,78 @@ contract Operations is AppStorage {
      * @param requestId The unique identifier of the loan request to be liquidated.
      *
      * Requirements:
-     * - Only a designated bot can execute this function.
-     * - The loan must be in a state eligible for liquidation.
+     * - The loan must be in SERVICED status and past due or below health factor
+     * - The request must exist
      *
      * Emits:
-     * - `RequestLiquidated` after successfully liquidating the collateral and transferring the repayment.
+     * - `RequestLiquidated` after successfully liquidating the collateral
      */
     function liquidateUserRequest(uint96 requestId) external {
-        // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
-        // Validator._onlyBot(_appStorage.botAddress, msg.sender);
+        // Validate transaction is not stopped
+        require(!_appStorage.isPaused, "Protocol is paused");
 
-        Request memory _activeRequest = _appStorage.request[requestId];
-        address loanCurrency = _activeRequest.loanRequestAddr;
-        address lenderAddress = _activeRequest.lender;
-        uint256 swappedAmount = 0;
+        Request storage request = _appStorage.requests[requestId];
+        require(request.status == Status.SERVICED, "Request not serviced");
+        
+        // Check if loan is past due or below health factor
+        bool isPastDue = block.timestamp > request.returnDate;
+        bool isBelowHealthFactor = checkLiquidationEligibility(request.author);
+        require(isPastDue || isBelowHealthFactor, "Not liquidatable");
 
-        if (!checkLiquidationEligibility(_activeRequest.author)) {
-            revert Protocol__NotLiquidateable();
+        // Calculate total debt including interest
+        uint256 totalDebt = request.totalRepayment;
+        address loanCurrency = request.loanRequestAddr;
+        uint8 loanDecimals = LibGettersImpl._getTokenDecimal(loanCurrency);
+
+        // Track total value recovered for the lender
+        uint256 totalRecovered = 0;
+
+        // Process each collateral token
+        for (uint256 i = 0; i < request.collateralTokens.length; i++) {
+            address collateralToken = request.collateralTokens[i];
+            uint256 collateralAmount = _appStorage.s_idToCollateralTokenAmount[requestId][collateralToken];
+            
+            if (collateralAmount == 0) continue;
+
+            // Get collateral value in loan currency
+            uint8 collateralDecimals = LibGettersImpl._getTokenDecimal(collateralToken);
+            uint256 collateralValue = LibGettersImpl._getUsdValue(
+                _appStorage,
+                collateralToken,
+                collateralAmount,
+                collateralDecimals
+            );
+
+            // Apply liquidation discount
+            uint256 discountedValue = (collateralValue * (10000 - Constants.LIQUIDATION_DISCOUNT)) / 10000;
+            totalRecovered += discountedValue;
+
+            // Transfer collateral to lender
+            _appStorage.s_idToCollateralTokenAmount[requestId][collateralToken] = 0;
+            _appStorage.userPositions[request.author].collateral[collateralToken] -= collateralAmount;
+            _appStorage.userPositions[request.lender].collateral[collateralToken] += collateralAmount;
         }
 
-        // Loop through each collateral token and swap to loan currency if applicable
-        for (
-            uint96 index = 0;
-            index < _activeRequest.collateralTokens.length;
-            index++
-        ) {
-            address collateralToken = _activeRequest.collateralTokens[index];
-            uint256 amountOfCollateralToken = _appStorage
-                .s_idToCollateralTokenAmount[requestId][collateralToken];
-
-            if (amountOfCollateralToken > 0) {
-                // Attempt to swap collateral token to loan currency
-                // (int128 baseQuote, int128 quoteFlow) = swapToLoanCurrency(
-                //     collateralToken,
-                //     amountOfCollateralToken,
-                //     loanCurrency
-                // );
-
-                // Update the collateral deposited for the user
-                _appStorage.s_addressToCollateralDeposited[
-                    _activeRequest.author
-                ][collateralToken] -= amountOfCollateralToken;
-
-                // Add swapped amount to the total; if swap failed, fallback to using collateral amount
-                // swappedAmount += uint256(quoteFlow); //loanCurrencyAmount[1];
-
-                // Mark collateral as fully used
-                _appStorage.s_idToCollateralTokenAmount[requestId][
-                    collateralToken
-                ] = 0;
-            }
+        // Update borrower's loan metrics
+        UserPosition storage borrowerPosition = _appStorage.userPositions[request.author];
+        borrowerPosition.p2pBorrowedAmount[loanCurrency] -= request.amount;
+        
+        // If loan currency is native token, handle wrapped version
+        if (loanCurrency == Constants.NATIVE_TOKEN) {
+            loanCurrency = Constants.WETH;
         }
 
-        // Transfer loan currency to the lender, ensuring not to exceed total repayment
-        if (swappedAmount >= _activeRequest.totalRepayment) {
-            if (loanCurrency == Constants.NATIVE_TOKEN) {
-                IERC20(Constants.WETH).safeTransfer(
-                    lenderAddress,
-                    _activeRequest.totalRepayment
-                );
-            } else {
-                IERC20(loanCurrency).safeTransfer(
-                    lenderAddress,
-                    _activeRequest.totalRepayment
-                );
-            }
-        } else {
-            if (loanCurrency == Constants.NATIVE_TOKEN) {
-                (bool _sent, ) = payable(lenderAddress).call{
-                    value: swappedAmount
-                }("");
-                require(_sent, "Protocol__TransferFailed");
-            } else {
-                IERC20(loanCurrency).safeTransfer(lenderAddress, swappedAmount);
-            }
-        }
-
-        // Mark request as closed post liquidation
-        _activeRequest.status = Status.CLOSED;
+        // Mark request as closed
+        request.status = Status.LIQUIDATED;
 
         emit Event.RequestLiquidated(
             requestId,
-            lenderAddress,
-            _activeRequest.totalRepayment
+            request.lender,
+            totalRecovered
         );
     }
 
-    /**
-     * @dev Swaps a specified collateral token into the loan currency using Uniswap.
-     * @param collateralToken The token used as collateral.
-     * @param collateralAmount The amount of collateral to swap.
-     * @param loanCurrency The target currency for the loan.
-     * @return baseQuote The base amount swapped
-     * @return quoteFLow The loan currency received
-     */
-    // function swapToLoanCurrency(
-    //     address collateralToken,
-    //     uint256 collateralAmount,
-    //     address loanCurrency
-    // ) public returns (int128, int128) {
-    //     // validate transaction is not stopped
-    //     ICrocSwapDex swapRouter = ICrocSwapDex(_appStorage.swapRouter);
-    //     Validator._isP2pStopped(_appStorage.isP2pStopped);
-
-    //     ICrocQuery queryRouter = ICrocQuery(
-    //         0x62223e90605845Cf5CC6DAE6E0de4CDA130d6DDf
-    //     );
-
-    //     uint128 _price = queryRouter.queryPrice(
-    //         address(0),
-    //         0x1D738a3436A8C49CefFbaB7fbF04B660fb528CbD,
-    //         420
-    //     );
-
-    //     ICrocImpact impactRouter = ICrocImpact(
-    //         0xc2c301759B5e0C385a38e678014868A33E2F3ae3
-    //     );
-
-    //     int128 baseQuote;
-    //     int128 quoteFlow;
-
-    //     // Early exit if collateral and loan currencies are the same
-    //     if (loanCurrency == collateralToken) {
-    //         baseQuote = -int128(int256(collateralAmount));
-    //         quoteFlow = int128(int256(collateralAmount));
-    //         return (baseQuote, quoteFlow);
-    //     }
-
-    //     require(
-    //         collateralAmount <= type(uint128).max,
-    //         "Value exceeds uint128 limit"
-    //     );
-
-    //     uint128 _amount = uint128(collateralAmount);
-
-    //     impactRouter.calcImpact(
-    //         address(0),
-    //         loanCurrency,
-    //         420,
-    //         true,
-    //         true,
-    //         _amount,
-    //         0,
-    //         _price
-    //     );
-    //     // Handle ETH to ERC20 swap
-    //     if (collateralToken == Constants.NATIVE_TOKEN) {
-    //         swapRouter.userCmd{value: collateralAmount}(
-    //             1,
-    //             abi.encode(
-    //                 address(0),
-    //                 loanCurrency,
-    //                 420, //poolIdx,
-    //                 true,
-    //                 true,
-    //                 uint128(_amount),
-    //                 0,
-    //                 _price,
-    //                 1,
-    //                 0x0
-    //             )
-    //         );
-    //     } else {
-    //         // Handle ERC20 to ERC20 swap
-    //         // Approve Uniswap router to transfer collateral tokens
-    //         IERC20(collateralToken).approve(
-    //             _appStorage.swapRouter,
-    //             collateralAmount
-    //         );
-
-    //         swapRouter.userCmd(
-    //             1,
-    //             abi.encode(
-    //                 collateralToken,
-    //                 loanCurrency,
-    //                 420, //poolIdx,
-    //                 true,
-    //                 true,
-    //                 uint128(_amount),
-    //                 0,
-    //                 _price,
-    //                 1,
-    //                 0x0
-    //             )
-    //         );
-    //     }
-
-    //     // Return the output amount in the target loan currency
-    //     return (baseQuote, quoteFlow);
-    // }
-
-    /**
-     * @notice Sets the bot address for the protocol.
-     * @dev This function allows the contract owner to set an address for automated bot actions within the protocol,
-     *      such as monitoring and liquidating undercollateralized loans. Only callable by the contract owner.
-     * @param _botAddress The address designated as the bot for handling automated protocol tasks.
-     *        It should be a valid external or contract address with necessary permissions.
-     * @custom:access Only callable by the contract owner.
-     */
-    function setBotAddress(address _botAddress) external {
-        // Ensures only the contract owner can call this function
-        LibDiamond.enforceIsContractOwner();
-
-        // Sets the bot address in storage, enabling bot actions within the protocol
-        _appStorage.botAddress = _botAddress;
-    }
-
-    /**
-     * @notice Sets the swap router address for handling token exchanges within the protocol.
-     * @dev This function allows the contract owner to set the router address used for token swaps
-     *      (e.g., using Uniswap or a compatible DEX) as part of the protocol's operations.
-     *      Only callable by the contract owner.
-     * @param _swapRouter The address of the swap router, typically a Uniswap or similar DEX router
-     *        that supports token exchange functionality required by the protocol.
-     * @custom:access Only callable by the contract owner.
-     */
-    function setSwapRouter(address _swapRouter) external {
-        // Ensures only the contract owner can call this function
-        LibDiamond.enforceIsContractOwner();
-
-        // Sets the swap router address in storage, enabling token swaps within the protocol
-        _appStorage.swapRouter = _swapRouter;
-    }
+   
 
     /// @notice this function is used to activate or deactivate the p2p fail safe
     /// @param _activate a boolean to activate or deactivate the fail safe
@@ -1204,7 +868,7 @@ contract Operations is AppStorage {
     function activtateFailSafe(bool _activate) external {
         LibDiamond.enforceIsContractOwner();
 
-        _appStorage.isP2pStopped = _activate;
+        _appStorage.isPaused = _activate;
         emit Event.P2pFailSafeStatus(_activate);
     }
 
@@ -1225,8 +889,13 @@ contract Operations is AppStorage {
         uint256 bestScore = 0;
         uint96 bestMatch = 0;
 
+        // Validate return duration
+        if (_returnDuration <= block.timestamp) {
+            return 0;
+        }
+
         // Iterate through all existing lending offers to find the best match
-        for (uint96 i = 1; i <= _appStorage.listingId; i++) {
+        for (uint96 i = 1; i < _appStorage.listingId + 1; i++) {
             LoanListing memory listing = _appStorage.loanListings[i];
 
             // Skip listings that don't meet basic criteria
@@ -1234,19 +903,26 @@ contract Operations is AppStorage {
             if (listing.tokenAddress != _loanCurrency) continue;
             if (listing.interest > _maxInterest) continue;
             if (listing.amount < _amount) continue;
-            if (_amount < listing.min_amount || _amount > listing.max_amount)
-                continue;
-            if (_returnDuration > block.timestamp + listing.returnDuration)
-                continue;
+            if (_amount < listing.min_amount || _amount > listing.max_amount) continue;
+            if (_returnDuration > block.timestamp + listing.returnDuration) continue;
 
             // Calculate match score - prioritize:
             // 1. Lower interest rates (weighted most heavily)
             // 2. Longer available durations
             // 3. Larger available amounts
 
-            uint256 interestScore = (_maxInterest - listing.interest) * 1000;
-            uint256 durationScore = (listing.returnDuration * 100) /
-                (_returnDuration - block.timestamp);
+            // Safe interest score calculation
+            uint256 interestScore;
+            unchecked {
+                // We already checked listing.interest <= _maxInterest
+                interestScore = (_maxInterest - listing.interest) * 1000;
+            }
+
+            // Safe duration score calculation
+            uint256 durationScore = (listing.returnDuration * 100) / 
+                (_returnDuration - block.timestamp);  // Safe due to initial check
+
+            // Safe amount score calculation (listing.amount >= _amount was checked)
             uint256 amountScore = (listing.amount * 10) / _amount;
 
             uint256 score = interestScore + durationScore + amountScore;
@@ -1362,7 +1038,7 @@ contract Operations is AppStorage {
         address _loanCurrency
     ) external returns (uint96 requestId, bool matched) {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
 
         // First, try to find the best matching lending offer
         uint96 matchedListingId = findMatchingLendingOffer(
@@ -1386,7 +1062,7 @@ contract Operations is AppStorage {
         Validator._moreThanZero(_amount);
 
         // Check if the loan currency is allowed by validating it against allowed loanable tokens
-        if (!_appStorage.s_isLoanable[_loanCurrency]) {
+        if (!_appStorage.tokenData[_loanCurrency].isLoanable) {
             revert Protocol__TokenNotLoanable();
         }
 
@@ -1416,8 +1092,10 @@ contract Operations is AppStorage {
         if (_loanUsdValue < 1) revert Protocol__InvalidAmount();
 
         // Get the total USD collateral value for the borrower
-        uint256 collateralValueInLoanCurrency = LibGettersImpl
-            ._getAccountCollateralValue(_appStorage, msg.sender);
+        uint256 collateralValueInLoanCurrency = LibGettersImpl._getAccountCollateralValue(
+            _appStorage,
+            msg.sender
+        );
 
         // Calculate the maximum loanable amount based on available collateral
         uint256 maxLoanableAmount = Utils.maxLoanableAmount(
@@ -1426,7 +1104,7 @@ contract Operations is AppStorage {
 
         // Check if the loan exceeds the user's collateral allowance
         if (
-            _appStorage.addressToUser[msg.sender].totalLoanCollected +
+            _appStorage.userPositions[msg.sender].totalLoanCollectedUSD +
                 _loanUsdValue >=
             maxLoanableAmount
         ) {
@@ -1434,15 +1112,16 @@ contract Operations is AppStorage {
         }
 
         // Retrieve collateral tokens associated with the borrower
-        address[] memory _collateralTokens = LibGettersImpl
-            ._getUserCollateralTokens(_appStorage, msg.sender);
+        address[] memory _collateralTokens = LibGettersImpl._getUserCollateralTokens(
+            _appStorage,
+            msg.sender
+        );
 
         // Increment the request ID and initialize the new loan request
-        _appStorage.requestId = _appStorage.requestId + 1;
-        Request storage _newRequest = _appStorage.request[
-            _appStorage.requestId
-        ];
-        _newRequest.requestId = _appStorage.requestId;
+        uint96 newRequestId = _appStorage.requestId + 1;
+        _appStorage.requestId = newRequestId;
+        Request storage _newRequest = _appStorage.requests[newRequestId];
+        _newRequest.requestId = newRequestId;
         _newRequest.author = msg.sender;
         _newRequest.amount = _amount;
         _newRequest.interest = _interest;
@@ -1466,9 +1145,7 @@ contract Operations is AppStorage {
         for (uint256 i = 0; i < _collateralTokens.length; i++) {
             address token = _collateralTokens[i];
             uint8 _decimalToken = LibGettersImpl._getTokenDecimal(token);
-            uint256 userBalance = _appStorage.s_addressToCollateralDeposited[
-                msg.sender
-            ][token];
+            uint256 userBalance = _appStorage.userPositions[msg.sender].collateral[token];
 
             // Calculate the amount to lock in USD for each token based on the proportional collateral
             uint256 amountToLockUSD = (LibGettersImpl._getUsdValue(
@@ -1480,24 +1157,27 @@ contract Operations is AppStorage {
 
             // Convert USD amount to token amount and apply the correct decimal scaling
             uint256 amountToLock = ((((amountToLockUSD) * 10) /
-                LibGettersImpl._getUsdValue(_appStorage, token, 10, 0)) *
+                LibGettersImpl._getUsdValue(
+                    _appStorage,
+                    token,
+                    10,
+                    0
+                )) *
                 (10 ** _decimalToken)) / (Constants.PRECISION);
 
             // Store the locked amount for each collateral token
-            _appStorage.s_idToCollateralTokenAmount[_appStorage.requestId][
-                token
-            ] = amountToLock;
+            _appStorage.s_idToCollateralTokenAmount[newRequestId][token] = amountToLock;
         }
 
         // Emit an event for the created loan request
         emit Event.RequestCreated(
             msg.sender,
-            _appStorage.requestId,
+            newRequestId,
             _amount,
             _interest
         );
 
-        return (_appStorage.requestId, false);
+        return (newRequestId, false);
     }
 
     /**
@@ -1526,7 +1206,7 @@ contract Operations is AppStorage {
         returns (uint96 listingId, uint96[] memory matchedRequests)
     {
         // validate transaction is not stopped
-        Validator._isP2pStopped(_appStorage.isP2pStopped);
+        Validator._isP2pStopped(_appStorage.isPaused);
 
         // Create the loan listing first
         // Validate that the amount is greater than zero and that a value has been sent if using native token
@@ -1534,7 +1214,7 @@ contract Operations is AppStorage {
         Validator._moreThanZero(_amount);
 
         // Ensure the specified loan currency is a loanable token
-        if (!_appStorage.s_isLoanable[_loanCurrency]) {
+        if (!_appStorage.tokenData[_loanCurrency].isLoanable) {
             revert Protocol__TokenNotLoanable();
         }
 
@@ -1564,13 +1244,12 @@ contract Operations is AppStorage {
         }
 
         // Increment the listing ID to create a new loan listing
-        _appStorage.listingId = _appStorage.listingId + 1;
-        LoanListing storage _newListing = _appStorage.loanListings[
-            _appStorage.listingId
-        ];
+        uint96 newListingId = _appStorage.listingId + 1;
+        _appStorage.listingId = newListingId;
+        LoanListing storage _newListing = _appStorage.loanListings[newListingId];
 
         // Populate the loan listing struct with the provided details
-        _newListing.listingId = _appStorage.listingId;
+        _newListing.listingId = newListingId;
         _newListing.author = msg.sender;
         _newListing.amount = _amount;
         _newListing.min_amount = _min_amount;
@@ -1582,11 +1261,13 @@ contract Operations is AppStorage {
 
         // Emit an event to notify that a new loan listing has been created
         emit Event.LoanListingCreated(
-            _appStorage.listingId,
+            newListingId,
             msg.sender,
             _loanCurrency,
             _amount
         );
+
+        listingId = newListingId;
 
         // If auto-matching is enabled, find compatible borrowing requests
         if (_autoMatch) {
@@ -1598,7 +1279,7 @@ contract Operations is AppStorage {
 
             // Find all eligible requests
             for (uint96 i = 1; i <= _appStorage.requestId; i++) {
-                Request memory req = _appStorage.request[i];
+                Request memory req = _appStorage.requests[i];
 
                 if (
                     req.status == Status.OPEN &&
@@ -1621,9 +1302,8 @@ contract Operations is AppStorage {
                 for (uint256 i = 0; i < matchCount - 1; i++) {
                     for (uint256 j = 0; j < matchCount - i - 1; j++) {
                         if (
-                            _appStorage.request[potentialMatches[j]].interest <
-                            _appStorage
-                                .request[potentialMatches[j + 1]]
+                            _appStorage.requests[potentialMatches[j]].interest <
+                            _appStorage.requests[potentialMatches[j + 1]]
                                 .interest
                         ) {
                             uint96 temp = potentialMatches[j];
@@ -1641,7 +1321,7 @@ contract Operations is AppStorage {
 
             for (uint256 i = 0; i < matchCount && remainingAmount > 0; i++) {
                 uint96 requestId = potentialMatches[i];
-                Request memory req = _appStorage.request[requestId];
+                Request memory req = _appStorage.requests[requestId];
 
                 // Skip if we can't fulfill this request
                 if (req.amount > remainingAmount || req.amount < _min_amount) {
@@ -1649,6 +1329,9 @@ contract Operations is AppStorage {
                 }
 
                 // Service this request
+                    if (req.loanRequestAddr != Constants.NATIVE_TOKEN){
+                        IERC20(req.loanRequestAddr).approve(address(this), req.amount);
+                    }
                 try
                     this.serviceRequest{
                         value: (req.loanRequestAddr == Constants.NATIVE_TOKEN)
@@ -1690,7 +1373,7 @@ contract Operations is AppStorage {
             matchedRequests = new uint96[](0);
         }
 
-        return (_appStorage.listingId, matchedRequests);
+        return (listingId, matchedRequests);
     }
 
     function matchListing(

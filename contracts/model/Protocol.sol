@@ -1,17 +1,6 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.9;
 
-/**
- * @dev Struct to store information about a user in the system.
- * @param userAddr The address of the user.
- * @param gitCoinPoint Points earned by the user in GitCoin or similar systems.
- * @param totalLoanCollected Total amount of loan the user has collected from the platform.
- */
-struct User {
-    address userAddr;
-    uint8 gitCoinPoint;
-    uint256 totalLoanCollected;
-}
 
 /**
  * @dev Struct to store information about a loan request.
@@ -402,6 +391,30 @@ struct DynamicParams {
     uint256 liquidityWeight;
 }
 
+struct UserPosition {
+    // Combined user position tracking
+    mapping(address => uint256) poolDeposits;      // token => amount
+    mapping(address => uint256) poolBorrows;       // token => normalized debt
+    mapping(address => uint256) p2pLentAmount;     // token => amount
+    mapping(address => uint256) p2pBorrowedAmount; // token => amount
+    mapping(address => uint256) collateral;        // token => amount
+    uint256 totalLoanCollectedUSD;                 // Combined USD value of all loans
+    uint256 lastUpdate;                            // Last position update timestamp
+}
+
+struct TokenData {
+    // Combined token-specific data
+    uint256 poolLiquidity;          // Amount available in lending pool
+    uint256 p2pLiquidity;           // Amount locked in P2P loans
+    uint256 totalDeposits;          // Total deposits across both systems
+    uint256 totalBorrows;           // Total borrows across both systems
+    uint256 normalizedPoolDebt;     // For pool interest calculations
+    uint256 lastUpdateTimestamp;    // Last update of rates
+    bool isLoanable;                // If token can be borrowed
+    address priceFeed;              // Price oracle address
+    address vault;                   // Associated ERC4626 vault
+}
+
 // Rebalancing Action Types
 enum RebalanceAction {
     NONE,
@@ -444,7 +457,8 @@ enum MarketCondition {
 enum Status {
     OPEN,
     SERVICED,
-    CLOSED
+    CLOSED,
+    LIQUIDATED
 }
 
 /**

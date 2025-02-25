@@ -28,4 +28,8 @@ library Constants {
     uint256 constant MAX_RESERVE_FACTOR = 5000; // 50%
     uint256 constant MAX_LTV = 8000; // 80%
     uint256 constant MIN_LIQUIDATION_THRESHOLD = 8250; // 82.5%
+    uint256 constant MIN_LOAN_VALUE_USD = 100; // 100 USD
+    uint256 constant PERCENTAGE_FACTOR = 10000; // 100%
+    uint256 constant MAX_LIQUIDATION_BONUS = 10000; // 100%
+    uint256 constant LIQUIDATION_DISCOUNT = 1000; // 10%
 }

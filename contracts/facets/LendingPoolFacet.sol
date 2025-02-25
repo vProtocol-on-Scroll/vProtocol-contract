@@ -10,6 +10,7 @@ import "../model/Event.sol";
 import {LibAppStorage} from "../libraries/LibAppStorage.sol";
 import {VTokenVault} from "../VTokenVault.sol";
 import  "../utils/constants/Constant.sol";
+import {LibGettersImpl} from "../libraries/LibGetters.sol";
 /**
  * @title LendingPoolFacet
  * @author Five Protocol
@@ -22,6 +23,68 @@ contract LendingPoolFacet {
 
 
     LibAppStorage.Layout internal s;
+
+    // Internal helper functions first
+    function _calculatePoolShares(address token, uint256 amount) internal view returns (uint256) {
+        TokenData storage tokenData = s.tokenData[token];
+        if (tokenData.totalDeposits == 0) {
+            return amount;
+        }
+        return (amount * tokenData.normalizedPoolDebt) / 1e18;
+    }
+
+    function _calculateNormalizedDebt(address token, uint256 amount) internal view returns (uint256) {
+        TokenData storage tokenData = s.tokenData[token];
+        return (amount * 1e18) / tokenData.normalizedPoolDebt;
+    }
+
+    function _calculateActualDebt(address token, uint256 normalizedDebt) internal view returns (uint256) {
+        TokenData storage tokenData = s.tokenData[token];
+        return (normalizedDebt * tokenData.normalizedPoolDebt) / 1e18;
+    }
+
+    function _calculateBorrowRate(uint256 utilization) internal view returns (uint256) {
+        if (utilization <= s.lendingPoolConfig.optimalUtilization) {
+            return s.lendingPoolConfig.baseRate + 
+                   (utilization * s.lendingPoolConfig.slopeRate) / s.lendingPoolConfig.optimalUtilization;
+        } else {
+            uint256 excessUtilization = utilization - s.lendingPoolConfig.optimalUtilization;
+            return s.lendingPoolConfig.baseRate + s.lendingPoolConfig.slopeRate +
+                   (excessUtilization * s.lendingPoolConfig.slopeExcess) / (10000 - s.lendingPoolConfig.optimalUtilization);
+        }
+    }
+
+    function _calculateDepositRate(uint256 borrowRate, uint256 utilization) internal view returns (uint256) {
+        return (borrowRate * utilization * (10000 - s.lendingPoolConfig.reserveFactor)) / (10000 * 10000);
+    }
+
+    function _updateState(address token) internal {
+        TokenData storage tokenData = s.tokenData[token];
+        
+        // Skip if updated in same block
+        if (tokenData.lastUpdateTimestamp == block.timestamp) {
+            return;
+        }
+
+        uint256 timeDelta = block.timestamp - tokenData.lastUpdateTimestamp;
+        if (timeDelta == 0) {
+            return;
+        }
+
+        // Calculate utilization rate
+        uint256 utilization = tokenData.totalDeposits == 0 ? 0 : 
+            (tokenData.totalBorrows * 10000) / tokenData.totalDeposits;
+
+        // Calculate interest rates
+        uint256 borrowRate = _calculateBorrowRate(utilization);
+        uint256 depositRate = _calculateDepositRate(borrowRate, utilization);
+
+        // Update normalized debt
+        uint256 interestFactor = (borrowRate * timeDelta) / Constants.SECONDS_PER_YEAR;
+        tokenData.normalizedPoolDebt = (tokenData.normalizedPoolDebt * (10000 + interestFactor)) / 10000;
+        
+        tokenData.lastUpdateTimestamp = block.timestamp;
+    }
 
     /**
      * @dev Fallback function that reverts any calls made to undefined functions.
@@ -74,7 +137,8 @@ function addSupportedToken(
     address token,
     uint256 ltv,
     uint256 liquidationThreshold,
-    uint256 liquidationBonus
+    uint256 liquidationBonus,
+    bool isLoanable
 ) external {
     require(msg.sender == LibDiamond.contractOwner(), "Not authorized");
     require(token != address(0), "Invalid token address");
@@ -86,7 +150,8 @@ function addSupportedToken(
     require(liquidationBonus >= 10000, "Liquidation bonus too low"); // Min 100%
     
     s.supportedTokens[token] = true;
-    s.allTokens.push(token);
+    s.s_supportedTokens.push(token);
+    s.s_isLoanable[token] = isLoanable;
     
     TokenConfig storage tokenConfig = s.tokenConfigs[token];
     tokenConfig.ltv = ltv;
@@ -152,59 +217,37 @@ function addSupportedToken(
      * @param amount Amount to deposit
      */
     function deposit(address token, uint256 amount) external {
-        require(s.lendingPoolConfig.isInitialized, "Pool not initialized");
-        require(!s.lendingPoolConfig.isPaused, "Pool is paused");
-        require(s.supportedTokens[token], "Token not supported");
-        require(s.tokenConfigs[token].isActive, "Token not active");
         require(amount > 0, "Amount must be greater than 0");
-        
-        // Check if vault exists for this token and redirect if needed
-        address vaultAddress = s.vaults[token];
-        if (vaultAddress != address(0)) {
-            // If vault exists, prefer deposit through vault
-            IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-            
-            // Calculate shares
-            uint256 shares = _calculateDepositShares(token, amount);
-            
-            // Mint vault tokens to the user through the mintFor function
-            VTokenVault(vaultAddress).mintFor(msg.sender, shares);
-            
-            // Proceed with internal accounting as if the deposit came from the vault
-            _handleDeposit(token, amount, shares, msg.sender);
-            
-            return;
-        }
-        
+        require(s.tokenData[token].isLoanable, "Token not supported");
+        require(!s.isPaused, "Protocol is paused");
+
         // Update state with latest interest rates
         _updateState(token);
+
+        UserPosition storage position = s.userPositions[msg.sender];
+        TokenData storage tokenData = s.tokenData[token];
+
+        // Calculate shares based on current exchange rate
+        uint256 shares = _calculatePoolShares(token, amount);
         
-        // Calculate shares to mint
-        uint256 _shares = _calculateDepositShares(token, amount);
-        
-        // Transfer tokens from user
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        
-        // Update user balance
-        s.userDeposits[msg.sender][token] += _shares;
-        
-        // Update reserve data
-        ReserveData storage reserve = s.reserves[token];
-        reserve.totalDeposits += amount;
-        reserve.totalDepositShares += _shares;
-        
-        // Update global pool balances for rebalancing
-        s.poolBalances.totalDeposits += _valueInEth(token, amount);
-        
-        // Update token-specific balances
-        s.tokenBalances[token].poolLiquidity += amount;
-        
+        // Update user position
+        position.poolDeposits[token] += shares;
+        position.lastUpdate = block.timestamp;
+
+        // Update token data
+        tokenData.poolLiquidity += amount;
+        tokenData.totalDeposits += amount;
+        tokenData.lastUpdateTimestamp = block.timestamp;
+
         // Update user activity for rewards
         UserActivity storage activity = s.userActivities[msg.sender];
-        activity.totalLendingAmount += _valueInEth(token, amount);
+        activity.totalLendingAmount += LibGettersImpl._getUsdValue(s, token, amount, LibGettersImpl._getTokenDecimal(token));
         activity.lastLenderRewardUpdate = block.timestamp;
-        
-        emit Event.Deposited(msg.sender, token, amount, _shares);
+
+        // Transfer tokens to protocol
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+
+        emit Event.Deposited(msg.sender, token, amount, shares);
     }
 
     /**
@@ -214,66 +257,37 @@ function addSupportedToken(
      * @return Amount withdrawn
      */
     function withdraw(address token, uint256 amount) external returns (uint256) {
-        require(s.lendingPoolConfig.isInitialized, "Pool not initialized");
-        require(!s.lendingPoolConfig.isPaused, "Pool is paused");
-        require(s.supportedTokens[token], "Token not supported");
-        
-        // Check if vault exists for this token
-        address vaultAddress = s.vaults[token];
-        if (vaultAddress != address(0)) {
-            revert("Use vault.withdraw() for this token");
-        }
-        
+        require(amount > 0, "Amount must be greater than 0");
+        require(!s.isPaused, "Protocol is paused");
+
         // Update state with latest interest rates
         _updateState(token);
-        
-        // Get user's shares
-        uint256 userShares = s.userDeposits[msg.sender][token];
-        require(userShares > 0, "No deposit balance");
-        
-        // Calculate max amount user can withdraw
-        uint256 maxWithdrawAmount = _sharesToAmount(token, userShares);
-        
-        // Determine amount to withdraw
-        uint256 withdrawAmount;
-        uint256 sharesToBurn;
-        
-        if (amount == 0 || amount >= maxWithdrawAmount) {
-            // Withdraw maximum
-            withdrawAmount = maxWithdrawAmount;
-            sharesToBurn = userShares;
-        } else {
-            // Partial withdrawal
-            withdrawAmount = amount;
-            sharesToBurn = _amountToShares(token, amount);
-            
-            // Ensure we're not burning more shares than user has
-            require(sharesToBurn <= userShares, "Insufficient shares");
-        }
-        
-        // Check available liquidity
-        require(withdrawAmount <= s.tokenBalances[token].poolLiquidity, "Insufficient liquidity");
-        
-        // Update user balance
-        s.userDeposits[msg.sender][token] -= sharesToBurn;
-        
-        // Update reserve data
-        ReserveData storage reserve = s.reserves[token];
-        reserve.totalDeposits -= withdrawAmount;
-        reserve.totalDepositShares -= sharesToBurn;
-        
-        // Update global pool balances for rebalancing
-        s.poolBalances.totalDeposits -= _valueInEth(token, withdrawAmount);
-        
-        // Update token-specific balances
-        s.tokenBalances[token].poolLiquidity -= withdrawAmount;
-        
+
+        UserPosition storage position = s.userPositions[msg.sender];
+        TokenData storage tokenData = s.tokenData[token];
+
+        // Calculate shares to burn
+        uint256 shares = _calculatePoolShares(token, amount);
+        require(position.poolDeposits[token] >= shares, "Insufficient balance");
+
+        // Check if withdrawal would affect health factor
+        uint256 healthFactor = LibGettersImpl._healthFactor(s, msg.sender, 0);
+        require(healthFactor >= Constants.MIN_HEALTH_FACTOR, "Withdrawal would affect health factor");
+
+        // Update user position
+        position.poolDeposits[token] -= shares;
+        position.lastUpdate = block.timestamp;
+
+        // Update token data
+        tokenData.poolLiquidity -= amount;
+        tokenData.totalDeposits -= amount;
+
         // Transfer tokens to user
-        IERC20(token).safeTransfer(msg.sender, withdrawAmount);
+        IERC20(token).safeTransfer(msg.sender, amount);
+
+        emit Event.Withdrawn(msg.sender, token, amount, shares);
         
-        emit Event.Withdrawn(msg.sender, token, withdrawAmount, sharesToBurn);
-        
-        return withdrawAmount;
+        return amount;
     }
 
     /**
@@ -282,53 +296,44 @@ function addSupportedToken(
      * @param amount Amount to borrow
      */
     function borrow(address token, uint256 amount) external {
-        require(s.lendingPoolConfig.isInitialized, "Pool not initialized");
-        require(!s.lendingPoolConfig.isPaused, "Pool is paused");
-        require(s.supportedTokens[token], "Token not supported");
-        require(s.tokenConfigs[token].isActive, "Token not active");
         require(amount > 0, "Amount must be greater than 0");
-        
+        require(!s.isPaused, "Protocol is paused");
+        require(s.tokenData[token].isLoanable, "Token not supported");
+
         // Update state with latest interest rates
         _updateState(token);
-        
-        // Check available liquidity
-        require(amount <= s.tokenBalances[token].poolLiquidity, "Insufficient liquidity");
-        
-        // Check if user has sufficient collateral
-        uint256 borrowingPower = _calculateBorrowingPower(msg.sender);
-        uint256 currentDebt = _calculateTotalDebt(msg.sender);
-        
-        uint256 newDebtInEth = currentDebt + _valueInEth(token, amount);
-        require(newDebtInEth <= borrowingPower, "Insufficient borrowing power");
-        
-        // Calculate normalized debt amount
+
+        UserPosition storage position = s.userPositions[msg.sender];
+        TokenData storage tokenData = s.tokenData[token];
+
+        // Calculate USD values
+        uint8 decimal = LibGettersImpl._getTokenDecimal(token);
+        uint256 borrowUsdValue = LibGettersImpl._getUsdValue(s, token, amount, decimal);
+
+        // Check borrower's health factor
+        uint256 healthFactor = LibGettersImpl._healthFactor(s, msg.sender, borrowUsdValue);
+        require(healthFactor >= Constants.MIN_HEALTH_FACTOR, "Insufficient collateral");
+
+        // Check pool liquidity
+        require(tokenData.poolLiquidity >= amount, "Insufficient liquidity");
+
+        // Update user position
         uint256 normalizedDebt = _calculateNormalizedDebt(token, amount);
-        
-        // Update user's borrow balance
-        s.userBorrows[msg.sender][token] += normalizedDebt;
-        
-        // Update reserve data
-        ReserveData storage reserve = s.reserves[token];
-        reserve.totalBorrows += amount;
-        reserve.normalizedDebt += normalizedDebt;
-        
-        // Update global pool balances for rebalancing
-        s.poolBalances.totalBorrows += _valueInEth(token, amount);
-        
-        // Update token-specific balances
-        s.tokenBalances[token].poolLiquidity -= amount;
-        
+        position.poolBorrows[token] += normalizedDebt;
+        position.lastUpdate = block.timestamp;
+
+        // Update token data
+        tokenData.poolLiquidity -= amount;
+        tokenData.totalBorrows += amount;
+
         // Update user activity for rewards
         UserActivity storage activity = s.userActivities[msg.sender];
-        activity.totalBorrowingAmount += _valueInEth(token, amount);
+        activity.totalBorrowingAmount += borrowUsdValue;
         activity.lastBorrowerRewardUpdate = block.timestamp;
-        
-        // Update rates based on new utilization
-        _updateRates(token);
-        
-        // Transfer tokens to user
+
+        // Transfer tokens to borrower
         IERC20(token).safeTransfer(msg.sender, amount);
-        
+
         emit Event.Borrowed(msg.sender, token, amount, normalizedDebt);
     }
 
@@ -339,57 +344,36 @@ function addSupportedToken(
      * @return Amount repaid
      */
     function repay(address token, uint256 amount) external returns (uint256) {
-        require(s.lendingPoolConfig.isInitialized, "Pool not initialized");
-        require(s.supportedTokens[token], "Token not supported");
-        
+        require(amount > 0, "Amount must be greater than 0");
+        require(!s.isPaused, "Protocol is paused");
+
         // Update state with latest interest rates
         _updateState(token);
-        
-        // Get user's debt
-        uint256 normalizedDebt = s.userBorrows[msg.sender][token];
-        require(normalizedDebt > 0, "No debt to repay");
-        
+
+        UserPosition storage position = s.userPositions[msg.sender];
+        TokenData storage tokenData = s.tokenData[token];
+
         // Calculate actual debt with accrued interest
+        uint256 normalizedDebt = position.poolBorrows[token];
         uint256 actualDebt = _calculateActualDebt(token, normalizedDebt);
-        
-        // Determine amount to repay
-        uint256 repayAmount;
-        if (amount == 0 || amount >= actualDebt) {
-            // Repay full debt
-            repayAmount = actualDebt;
-        } else {
-            // Partial repayment
-            repayAmount = amount;
-        }
-        
-        // Calculate normalized debt to reduce
-        uint256 normalizedToReduce = (repayAmount * normalizedDebt) / actualDebt;
-        
+        require(actualDebt > 0, "No debt to repay");
+
+        // Cap repayment at actual debt
+        uint256 repayAmount = amount > actualDebt ? actualDebt : amount;
+        uint256 normalizedRepayment = _calculateNormalizedDebt(token, repayAmount);
+
+        // Update user position
+        position.poolBorrows[token] -= normalizedRepayment;
+        position.lastUpdate = block.timestamp;
+
+        // Update token data
+        tokenData.poolLiquidity += repayAmount;
+        tokenData.totalBorrows -= repayAmount;
+
         // Transfer tokens from user
         IERC20(token).safeTransferFrom(msg.sender, address(this), repayAmount);
-        
-        // Update user's borrow balance
-        if (repayAmount == actualDebt) {
-            s.userBorrows[msg.sender][token] = 0;
-        } else {
-            s.userBorrows[msg.sender][token] -= normalizedToReduce;
-        }
-        
-        // Update reserve data
-        ReserveData storage reserve = s.reserves[token];
-        reserve.totalBorrows -= repayAmount;
-        reserve.normalizedDebt -= normalizedToReduce;
-        
-        // Update global pool balances for rebalancing
-        s.poolBalances.totalBorrows -= _valueInEth(token, repayAmount);
-        
-        // Update token-specific balances
-        s.tokenBalances[token].poolLiquidity += repayAmount;
-        
-        // Update rates based on new utilization
-        _updateRates(token);
-        
-        emit Event.Repaid(msg.sender, token, repayAmount, normalizedToReduce);
+
+        emit Event.Repaid(msg.sender, token, repayAmount, normalizedRepayment);
         
         return repayAmount;
     }
@@ -410,7 +394,9 @@ function addSupportedToken(
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         
         // Update user's collateral balance
-        s.userCollateral[msg.sender][token] += amount;
+        UserPosition storage position = s.userPositions[msg.sender];
+        position.collateral[token] += amount;
+        position.lastUpdate = block.timestamp;
         
         emit Event.CollateralDeposited(msg.sender, token, amount);
     }
@@ -424,7 +410,8 @@ function addSupportedToken(
         require(s.lendingPoolConfig.isInitialized, "Pool not initialized");
         require(s.supportedTokens[token], "Token not supported");
         
-        uint256 currentCollateral = s.userCollateral[msg.sender][token];
+        UserPosition storage position = s.userPositions[msg.sender];
+        uint256 currentCollateral = position.collateral[token];
         require(currentCollateral >= amount, "Insufficient collateral");
         
         // Calculate new health factor after withdrawal
@@ -441,7 +428,7 @@ function addSupportedToken(
         }
         
         // Update user's collateral balance
-        s.userCollateral[msg.sender][token] -= amount;
+        position.collateral[token] -= amount;
         
         // Transfer tokens to user
         IERC20(token).safeTransfer(msg.sender, amount);
@@ -477,14 +464,15 @@ function addSupportedToken(
         require(healthFactor < Constants.HEALTH_FACTOR_THRESHOLD, "Position not liquidatable");
         
         // Get user's debt
-        uint256 normalizedDebt = s.userBorrows[user][debtToken];
+        UserPosition storage position = s.userPositions[user];
+        uint256 normalizedDebt = position.poolBorrows[debtToken];
         require(normalizedDebt > 0, "No debt to liquidate");
         
         // Calculate actual debt with accrued interest
         uint256 userDebt = _calculateActualDebt(debtToken, normalizedDebt);
         
         // Check collateral availability
-        uint256 userCollateral = s.userCollateral[user][collateralToken];
+        uint256 userCollateral = position.collateral[collateralToken];
         require(userCollateral > 0, "No collateral to liquidate");
         
         // Limit debt amount to max allowed (50% of debt or total debt if health factor < 50%)
@@ -520,10 +508,10 @@ function addSupportedToken(
         IERC20(debtToken).safeTransferFrom(msg.sender, address(this), debtToLiquidate);
         
         // Update user's debt
-        s.userBorrows[user][debtToken] -= normalizedToReduce;
+        position.poolBorrows[debtToken] -= normalizedToReduce;
         
         // Update user's collateral
-        s.userCollateral[user][collateralToken] -= collateralToLiquidate;
+        position.collateral[collateralToken] -= collateralToLiquidate;
         
         // Update reserve data
         ReserveData storage reserve = s.reserves[debtToken];
@@ -732,7 +720,7 @@ function addSupportedToken(
      * @return Deposit balance in underlying tokens
      */
     function getUserDepositBalance(address user, address token) external view returns (uint256) {
-        uint256 shares = s.userDeposits[user][token];
+        uint256 shares = s.userPositions[user].poolDeposits[token];
         return _sharesToAmount(token, shares);
     }
 
@@ -743,7 +731,7 @@ function addSupportedToken(
      * @return Borrow balance in underlying tokens
      */
     function getUserBorrowBalance(address user, address token) external view returns (uint256) {
-        uint256 normalizedDebt = s.userBorrows[user][token];
+        uint256 normalizedDebt = s.userPositions[user].poolBorrows[token];
         return _calculateActualDebt(token, normalizedDebt);
    }
 
@@ -839,54 +827,6 @@ function addSupportedToken(
        UserActivity storage activity = s.userActivities[receiver];
        activity.totalLendingAmount += _valueInEth(token, amount);
        activity.lastLenderRewardUpdate = block.timestamp;
-   }
-
-   /**
-    * @notice Update state for a specific token
-    * @param token Token address
-    */
-   function _updateState(address token) internal {
-       ReserveData storage reserve = s.reserves[token];
-       
-       // Skip if updated in same block
-       if (reserve.lastUpdateTimestamp == block.timestamp) {
-           return;
-       }
-       
-       uint256 timeDelta = block.timestamp - reserve.lastUpdateTimestamp;
-       if (timeDelta == 0) {
-           return;
-       }
-       
-       RateData storage rates = s.rateData[token];
-       
-       // Update indices based on current rates
-       uint256 liquidityRatePerSecond = rates.depositRate / Constants.SECONDS_PER_YEAR;
-       uint256 borrowRatePerSecond = rates.borrowRate / Constants.SECONDS_PER_YEAR;
-       
-       // Ray math (27 decimals)
-       uint256 cumulatedLiquidityInterest = _calculateCompoundedInterest(
-           liquidityRatePerSecond,
-           timeDelta
-       );
-       
-       uint256 cumulatedBorrowInterest = _calculateCompoundedInterest(
-           borrowRatePerSecond,
-           timeDelta
-       );
-       
-       // Update indices
-       reserve.liquidityIndex = (reserve.liquidityIndex * cumulatedLiquidityInterest) / Constants.RAY;
-       reserve.borrowIndex = (reserve.borrowIndex * cumulatedBorrowInterest) / Constants.RAY;
-       
-       // Update timestamp
-       reserve.lastUpdateTimestamp = block.timestamp;
-       
-       // Update rates based on current utilization
-       _updateRates(token);
-       
-       // Update protocol rates for the token
-       s.tokenRates[token].lendingPoolRate = rates.depositRate;
    }
 
    /**
@@ -1032,38 +972,6 @@ function addSupportedToken(
    }
 
    /**
-    * @notice Calculate normalized debt amount
-    * @param token Token address
-    * @param amount Amount in underlying tokens
-    * @return Normalized debt amount
-    */
-   function _calculateNormalizedDebt(address token, uint256 amount) internal view returns (uint256) {
-       ReserveData storage reserve = s.reserves[token];
-       
-       if (reserve.borrowIndex == 0) {
-           return amount;
-       }
-       
-       return (amount * Constants.RAY) / reserve.borrowIndex;
-   }
-
-   /**
-    * @notice Calculate actual debt from normalized debt
-    * @param token Token address
-    * @param normalizedDebt Normalized debt amount
-    * @return Actual debt amount with accrued interest
-    */
-   function _calculateActualDebt(address token, uint256 normalizedDebt) internal view returns (uint256) {
-       ReserveData storage reserve = s.reserves[token];
-       
-       if (normalizedDebt == 0) {
-           return 0;
-       }
-       
-       return (normalizedDebt * reserve.borrowIndex) / Constants.RAY;
-   }
-
-   /**
     * @notice Calculate user's total collateral value in ETH
     * @param user User address
     * @return Total collateral value in ETH
@@ -1075,7 +983,7 @@ function addSupportedToken(
        address[] memory supportedCollaterals = _getSupportedTokens();
        for (uint256 i = 0; i < supportedCollaterals.length; i++) {
            address token = supportedCollaterals[i];
-           uint256 collateralAmount = s.userCollateral[user][token];
+           uint256 collateralAmount = s.userPositions[user].collateral[token];
            
            if (collateralAmount > 0) {
                totalCollateralETH += _valueInEth(token, collateralAmount);
@@ -1097,7 +1005,7 @@ function addSupportedToken(
        address[] memory supportedTokens = _getSupportedTokens();
        for (uint256 i = 0; i < supportedTokens.length; i++) {
            address token = supportedTokens[i];
-           uint256 normalizedDebt = s.userBorrows[user][token];
+           uint256 normalizedDebt = s.userPositions[user].poolBorrows[token];
            
            if (normalizedDebt > 0) {
                uint256 actualDebt = _calculateActualDebt(token, normalizedDebt);
@@ -1135,7 +1043,7 @@ function addSupportedToken(
        address[] memory supportedCollaterals = _getSupportedTokens();
        for (uint256 i = 0; i < supportedCollaterals.length; i++) {
            address token = supportedCollaterals[i];
-           uint256 collateralAmount = s.userCollateral[user][token];
+           uint256 collateralAmount = s.userPositions[user].collateral[token];
            
            if (collateralAmount > 0) {
                uint256 collateralValueETH = _valueInEth(token, collateralAmount);
@@ -1221,27 +1129,7 @@ function addSupportedToken(
     * @return Array of supported token addresses
     */
    function _getSupportedTokens() internal view returns (address[] memory) {
-       uint256 count = 0;
-       
-       // First pass: count supported tokens
-       for (uint256 i = 0; i < s.allTokens.length; i++) {
-           if (s.supportedTokens[s.allTokens[i]]) {
-               count++;
-           }
-       }
-       
-       // Second pass: populate array
-       address[] memory tokens = new address[](count);
-       uint256 index = 0;
-       
-       for (uint256 i = 0; i < s.allTokens.length; i++) {
-           if (s.supportedTokens[s.allTokens[i]]) {
-               tokens[index] = s.allTokens[i];
-               index++;
-           }
-       }
-       
-       return tokens;
+       return s.s_supportedTokens;
    }
 
    /**

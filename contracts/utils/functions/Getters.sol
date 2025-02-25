@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {AppStorage} from "./AppStorage.sol";
 import {LibGettersImpl} from "../../libraries/LibGetters.sol";
 import "../../model/Protocol.sol";
+import {Constants} from "../constants/Constant.sol";
 
 /**
  * @title Getters
@@ -152,9 +153,7 @@ contract Getters is AppStorage {
         address _sender,
         address _tokenAddr
     ) external view returns (uint256 _value) {
-        _value = _appStorage.s_addressToCollateralDeposited[_sender][
-            _tokenAddr
-        ];
+        _value = _appStorage.userPositions[_sender].collateral[_tokenAddr];
     }
 
     /**
@@ -169,7 +168,7 @@ contract Getters is AppStorage {
         address _sender,
         address _tokenAddr
     ) external view returns (uint256 _value) {
-        _value = _appStorage.s_addressToAvailableBalance[_sender][_tokenAddr];
+        _value = _appStorage.userPositions[_sender].poolDeposits[_tokenAddr];
     }
 
     /**
@@ -197,7 +196,13 @@ contract Getters is AppStorage {
         view
         returns (address[] memory _assets)
     {
-        _assets = _appStorage.s_loanableToken;
+        _assets = _appStorage.s_supportedTokens;
+
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (!_appStorage.supportedTokens[_assets[i]]) {
+                _assets[i] = address(0);
+            }
+        }
     }
 
     /**
@@ -290,5 +295,13 @@ contract Getters is AppStorage {
         returns (Request[] memory _requests)
     {
         _requests = LibGettersImpl._getAllRequest(_appStorage);
+    }
+
+    function getLiquidationDiscount() external view returns (uint256) {
+        return Constants.LIQUIDATION_DISCOUNT;
+    }
+
+    function getTokenData(address _token) external view returns (TokenData memory) {
+        return _appStorage.tokenData[_token];
     }
 }
