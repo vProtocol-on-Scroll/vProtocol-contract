@@ -20,7 +20,9 @@ library LibGettersImpl {
     ) internal view returns (uint256) {
         (int256 price, bool isStale) = _getPriceFromOracle(s, token);
         if (isStale) revert Protocol__PriceStale();
-        return ((uint256(price) * Constants.NEW_PRECISION) * amount) / (10 ** decimal);
+        return
+            ((uint256(price) * Constants.NEW_PRECISION) * amount) /
+            (10 ** decimal);
     }
 
     /**
@@ -31,16 +33,20 @@ library LibGettersImpl {
         address token
     ) internal view returns (int256 price, bool isStale) {
         TokenData storage tokenData = s.tokenData[token];
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(tokenData.priceFeed);
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            tokenData.priceFeed
+        );
         uint256 updatedAt;
         (
-            /* uint80 roundId */,
-            price,
-            /* uint256 startedAt */,
-            updatedAt,
+            ,
+            /* uint80 roundId */ price,
+            ,
+            /* uint256 startedAt */ updatedAt,
             /* uint80 answeredInRound */
+
         ) = priceFeed.latestRoundData();
-        isStale = (block.timestamp - updatedAt) > Constants.PRICE_STALE_THRESHOLD;
+        isStale =
+            (block.timestamp - updatedAt) > Constants.PRICE_STALE_THRESHOLD;
     }
 
     /**
@@ -55,7 +61,8 @@ library LibGettersImpl {
         uint8 fromDecimal = _getTokenDecimal(from);
         uint8 toDecimal = _getTokenDecimal(to);
         uint256 fromUsd = _getUsdValue(s, from, amount, fromDecimal);
-        value = (((fromUsd * 10) / _getUsdValue(s, to, 10, 0)) * (10 ** toDecimal));
+        value = (((fromUsd * 10) / _getUsdValue(s, to, 10, 0)) *
+            (10 ** toDecimal));
     }
 
     /**
@@ -66,13 +73,18 @@ library LibGettersImpl {
         address user
     ) internal view returns (uint256 totalCollateralValueInUsd) {
         UserPosition storage position = s.userPositions[user];
-        
+
         for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
             address token = s.s_supportedTokens[i];
             uint256 amount = position.collateral[token];
             if (amount > 0) {
                 uint8 decimal = _getTokenDecimal(token);
-                totalCollateralValueInUsd += _getUsdValue(s, token, amount, decimal);
+                totalCollateralValueInUsd += _getUsdValue(
+                    s,
+                    token,
+                    amount,
+                    decimal
+                );
             }
         }
     }
@@ -85,18 +97,23 @@ library LibGettersImpl {
         address user
     ) internal view returns (uint256 totalAvailableValueInUsd) {
         UserPosition storage position = s.userPositions[user];
-        
+
         for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
             address token = s.s_supportedTokens[i];
-            
+
             // Include both pool deposits and P2P lending
             uint256 poolAmount = position.poolDeposits[token];
             uint256 p2pAmount = position.p2pLentAmount[token];
             uint256 totalAmount = poolAmount + p2pAmount;
-            
+
             if (totalAmount > 0) {
                 uint8 decimal = _getTokenDecimal(token);
-                totalAvailableValueInUsd += _getUsdValue(s, token, totalAmount, decimal);
+                totalAvailableValueInUsd += _getUsdValue(
+                    s,
+                    token,
+                    totalAmount,
+                    decimal
+                );
             }
         }
     }
@@ -131,7 +148,11 @@ library LibGettersImpl {
     function _getAccountInfo(
         LibAppStorage.Layout storage s,
         address user
-    ) internal view returns (uint256 totalBorrowInUsd, uint256 collateralValueInUsd) {
+    )
+        internal
+        view
+        returns (uint256 totalBorrowInUsd, uint256 collateralValueInUsd)
+    {
         totalBorrowInUsd = _getTotalUserDebtInUSD(s, user);
         collateralValueInUsd = _getAccountCollateralValue(s, user);
     }
@@ -144,15 +165,19 @@ library LibGettersImpl {
         address user,
         uint256 newBorrowValue
     ) internal view returns (uint256) {
-        (uint256 totalBorrowInUsd, uint256 collateralValueInUsd) = _getAccountInfo(s, user);
-        
+        (
+            uint256 totalBorrowInUsd,
+            uint256 collateralValueInUsd
+        ) = _getAccountInfo(s, user);
+
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
             Constants.LIQUIDATION_THRESHOLD) / Constants.PERCENTAGE_FACTOR;
 
         if ((totalBorrowInUsd == 0) && (newBorrowValue == 0))
             return type(uint256).max;
 
-        return (collateralAdjustedForThreshold * Constants.PRECISION) /
+        return
+            (collateralAdjustedForThreshold * Constants.PRECISION) /
             (totalBorrowInUsd + newBorrowValue);
     }
 
@@ -218,16 +243,17 @@ library LibGettersImpl {
         address user
     ) internal view returns (uint256 totalDebtUSD) {
         UserPosition storage position = s.userPositions[user];
-        
+
         for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
             address token = s.s_supportedTokens[i];
-            
+
             // Get pool debt with accrued interest
-            uint256 poolDebt = (position.poolBorrows[token] * s.tokenData[token].normalizedPoolDebt) / 1e18;
-            
+            uint256 poolDebt = (position.poolBorrows[token] *
+                s.tokenData[token].normalizedPoolDebt) / 1e18;
+
             // Add P2P debt
             uint256 p2pDebt = position.p2pBorrowedAmount[token];
-            
+
             uint256 totalDebt = poolDebt + p2pDebt;
             if (totalDebt > 0) {
                 uint8 decimal = _getTokenDecimal(token);
@@ -260,7 +286,7 @@ library LibGettersImpl {
         // Second pass: create and populate array
         tokens = new address[](tokenCount);
         uint256 index = 0;
-        
+
         for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
             address token = s.s_supportedTokens[i];
             if (position.collateral[token] > 0) {
@@ -283,16 +309,17 @@ library LibGettersImpl {
         address user
     ) internal view returns (uint256 totalLoanUSD) {
         UserPosition storage position = s.userPositions[user];
-        
+
         for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
             address token = s.s_supportedTokens[i];
-            
+
             // Get pool debt with accrued interest
-            uint256 poolDebt = (position.poolBorrows[token] * s.tokenData[token].normalizedPoolDebt) / 1e18;
-            
+            uint256 poolDebt = (position.poolBorrows[token] *
+                s.tokenData[token].normalizedPoolDebt) / 1e18;
+
             // Add P2P debt
             uint256 p2pDebt = position.p2pBorrowedAmount[token];
-            
+
             uint256 totalDebt = poolDebt + p2pDebt;
             if (totalDebt > 0) {
                 uint8 decimal = _getTokenDecimal(token);
@@ -346,15 +373,15 @@ library LibGettersImpl {
         LibAppStorage.Layout storage s
     ) internal view returns (Request[] memory) {
         uint96 requestId = s.requestId;
-        
+
         // Create array of all requests
         Request[] memory requests = new Request[](requestId);
-        
+
         // Populate array with requests
         for (uint96 i = 1; i <= requestId; i++) {
             requests[i - 1] = s.requests[i];
         }
-        
+
         return requests;
     }
 }

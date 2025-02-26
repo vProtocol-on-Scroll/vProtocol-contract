@@ -15,7 +15,7 @@ import {Constants} from "../contracts/utils/constants/Constant.sol";
 import "../contracts/model/Protocol.sol";
 import "../contracts/model/Event.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import '../contracts/utils/validators/Error.sol';
+import "../contracts/utils/validators/Error.sol";
 
 contract P2pFacetTest is Test {
     Diamond diamond;
@@ -42,9 +42,9 @@ contract P2pFacetTest is Test {
     address _user2 = makeAddr("user2");
 
     // Price constants
-    int256 constant USDC_PRICE = 1 * 10**8; // $1.00
-    int256 constant WETH_PRICE = 2000 * 10**8; // $2000
-    int256 constant WBTC_PRICE = 30000 * 10**8; // $30000
+    int256 constant USDC_PRICE = 1 * 10 ** 8; // $1.00
+    int256 constant WETH_PRICE = 2000 * 10 ** 8; // $2000
+    int256 constant WBTC_PRICE = 30000 * 10 ** 8; // $30000
 
     address constant NATIVE_TOKEN = 0x0000000000000000000000000000000000000001;
 
@@ -53,7 +53,7 @@ contract P2pFacetTest is Test {
         usdc = new MockToken("USD Coin", "USDC", 6);
         weth = new MockToken("Wrapped ETH", "WETH", 18);
         wbtc = new MockToken("Wrapped BTC", "WBTC", 8);
- // Deploy mock price feeds
+        // Deploy mock price feeds
         usdcPriceFeed = new MockPriceFeed(USDC_PRICE, 8);
         wethPriceFeed = new MockPriceFeed(WETH_PRICE, 8);
         wbtcPriceFeed = new MockPriceFeed(WBTC_PRICE, 8);
@@ -98,19 +98,16 @@ contract P2pFacetTest is Test {
         // Initialize diamond with tokens and price feeds
         diamond.initialize(tokens, priceFeeds, address(diamond));
 
-        P2pFacet(payable(diamond)).addCollateralTokens(tokens,priceFeeds);
+        P2pFacet(payable(diamond)).addCollateralTokens(tokens, priceFeeds);
         // Fund test accounts
         fundAccounts();
 
         vm.warp(360 days);
     }
 
-    
-
     function testLoanListingDuration() public {
         switchSigner(_user1);
         _depositCollateral();
-        
 
         uint256 _amount = 1 ether;
         uint256 _min_amount = 0.1 ether;
@@ -128,7 +125,9 @@ contract P2pFacetTest is Test {
             _loanCurrency
         );
 
-        LoanListing memory _listing =  P2pFacet(payable(diamond)).getLoanListing(1);
+        LoanListing memory _listing = P2pFacet(payable(diamond)).getLoanListing(
+            1
+        );
         assertEq(_listing.amount, _amount);
         assertEq(_listing.returnDuration, 365 days);
         assertEq(uint8(_listing.listingStatus), uint8(ListingStatus.OPEN));
@@ -256,20 +255,20 @@ contract P2pFacetTest is Test {
         if (token == NATIVE_TOKEN) {
             (uint96 listingId, ) = P2pFacet(payable(diamond))
                 .createLoanListingWithMatching{value: amount}(
-                    amount,
-                    minAmount,
-                    maxAmount,
-                    block.timestamp + returnDuration,
-                    interest,
-                    token,
-                    false // no auto-matching
-                );
+                amount,
+                minAmount,
+                maxAmount,
+                block.timestamp + returnDuration,
+                interest,
+                token,
+                false // no auto-matching
+            );
             vm.stopPrank();
             return listingId;
         } else {
             // Ensure token is approved
             IERC20(token).approve(address(diamond), amount);
-            
+
             (uint96 listingId, ) = P2pFacet(payable(diamond))
                 .createLoanListingWithMatching(
                     amount,
@@ -299,29 +298,34 @@ contract P2pFacetTest is Test {
         // First deposit collateral
         // For simplicity, deposit WETH worth 3x the loan value
         uint256 wethRequired;
-        
+
         if (token == address(usdc)) {
             // Converting USDC amount to WETH equivalent with 3x collateral
-            wethRequired = (amount * 3 * 10**18) / (uint256(USDC_PRICE) * 10**12 / uint256(WETH_PRICE));
+            wethRequired =
+                (amount * 3 * 10 ** 18) /
+                ((uint256(USDC_PRICE) * 10 ** 12) / uint256(WETH_PRICE));
         } else if (token == address(wbtc)) {
             // Converting WBTC amount to WETH equivalent with 3x collateral
-            wethRequired = (amount * 3 * 10**18) / (uint256(WBTC_PRICE) * 10**10 / uint256(WETH_PRICE));
+            wethRequired =
+                (amount * 3 * 10 ** 18) /
+                ((uint256(WBTC_PRICE) * 10 ** 10) / uint256(WETH_PRICE));
         } else if (token == address(weth) || token == NATIVE_TOKEN) {
             // Direct WETH or ETH - use 3x collateral
             wethRequired = amount * 3;
         }
-        
+
         P2pFacet p2pContract = P2pFacet(payable(diamond));
         p2pContract.depositCollateral(address(weth), wethRequired);
 
         // Create borrow request
-        (uint96 requestId, bool matched) = p2pContract.createAndMatchLendingRequest(
-            amount,
-            interest,
-            block.timestamp + returnDuration,
-            block.timestamp + expirationDate,
-            token
-        );
+        (uint96 requestId, bool matched) = p2pContract
+            .createAndMatchLendingRequest(
+                amount,
+                interest,
+                block.timestamp + returnDuration,
+                block.timestamp + expirationDate,
+                token
+            );
 
         vm.stopPrank();
         return requestId;
@@ -341,7 +345,7 @@ contract P2pFacetTest is Test {
 
         // Assert listing was created
         assertTrue(listingId > 0, "Listing should be created");
-        
+
         // Verify listing details
         P2pFacet p2pContract = P2pFacet(payable(diamond));
         LoanListing memory listing = p2pContract.getLoanListing(listingId);
@@ -370,7 +374,7 @@ contract P2pFacetTest is Test {
 
         // Assert request was created
         assertTrue(requestId > 0, "Request should be created");
-        
+
         // Verify request details
         Request memory request = p2pContract.getRequest(requestId);
         assertEq(request.author, borrower1);
@@ -381,7 +385,7 @@ contract P2pFacetTest is Test {
     // Test: Auto-match a borrowing request with existing lending offer
     function testAutoMatchBorrowRequest() public {
         P2pFacet p2pContract = P2pFacet(payable(diamond));
-        
+
         // Create a lending offer first
         uint96 listingId = createLendingListing(
             lender1,
@@ -410,13 +414,14 @@ contract P2pFacetTest is Test {
         );
         console.log(matchedListingId);
 
-        (uint96 requestId, bool matched) = p2pContract.createAndMatchLendingRequest(
-            300 * 10 ** 6, // 300 USDC
-            600, // 6% interest (higher than lender's 5%)
-            block.timestamp + 15 days, // 15 day loan (shorter than lender's 30 days)
-            block.timestamp + 7 days, // expires in 7 days
-            address(usdc) // USDC
-        );
+        (uint96 requestId, bool matched) = p2pContract
+            .createAndMatchLendingRequest(
+                300 * 10 ** 6, // 300 USDC
+                600, // 6% interest (higher than lender's 5%)
+                block.timestamp + 15 days, // 15 day loan (shorter than lender's 30 days)
+                block.timestamp + 7 days, // expires in 7 days
+                address(usdc) // USDC
+            );
         vm.stopPrank();
 
         // Assert auto-matching worked
@@ -431,13 +436,17 @@ contract P2pFacetTest is Test {
 
         // Check lending listing was updated
         LoanListing memory listing = p2pContract.getLoanListing(listingId);
-        assertEq(listing.amount, 700 * 10 ** 6, "Listing amount should be reduced");
+        assertEq(
+            listing.amount,
+            700 * 10 ** 6,
+            "Listing amount should be reduced"
+        );
     }
 
     // Test: Auto-match a lending offer with existing borrowing requests
     function testAutoMatchLendingOffer() public {
         P2pFacet p2pContract = P2pFacet(payable(diamond));
-        
+
         // Create a borrowing request first
         // Deposit collateral for borrower
 
@@ -453,21 +462,26 @@ contract P2pFacetTest is Test {
         // Create lending offer with auto-match
         vm.startPrank(lender1);
         IERC20(address(usdc)).approve(address(diamond), 1000 * 10 ** 6);
-        
-        (uint96 listingId, uint96[] memory matchedRequests) = p2pContract.createLoanListingWithMatching(
-            1000 * 10 ** 6, // 1,000 USDC
-            100 * 10 ** 6, // min 100 USDC
-            500 * 10 ** 6, // max 500 USDC
-            block.timestamp + 45 days, // 45 day loans
-            500, // 5% interest (lower than borrower's 7%)
-            address(usdc), // USDC
-            true // auto-match enabled
-        );
+
+        (uint96 listingId, uint96[] memory matchedRequests) = p2pContract
+            .createLoanListingWithMatching(
+                1000 * 10 ** 6, // 1,000 USDC
+                100 * 10 ** 6, // min 100 USDC
+                500 * 10 ** 6, // max 500 USDC
+                block.timestamp + 45 days, // 45 day loans
+                500, // 5% interest (lower than borrower's 7%)
+                address(usdc), // USDC
+                true // auto-match enabled
+            );
         vm.stopPrank();
 
         // Assert auto-matching worked
-        assertGt(matchedRequests.length, 0, "Should match at least one request");
-        
+        assertGt(
+            matchedRequests.length,
+            0,
+            "Should match at least one request"
+        );
+
         if (matchedRequests.length > 0) {
             assertEq(matchedRequests[0], requestId, "Should match our request");
         }
@@ -516,7 +530,7 @@ contract P2pFacetTest is Test {
         vm.deal(borrower2, 100 ether);
         vm.deal(_user1, 1000 ether);
         vm.deal(_user2, 1000 ether);
-        
+
         // Mint tokens to test accounts
 
         // USDC
@@ -572,8 +586,7 @@ contract P2pFacetTest is Test {
         usdc.approve(address(diamond), type(uint256).max);
         weth.approve(address(diamond), type(uint256).max);
         wbtc.approve(address(diamond), type(uint256).max);
-        vm.stopPrank(); 
-
+        vm.stopPrank();
     }
 
     function switchSigner(address _newSigner) public {
@@ -605,40 +618,71 @@ contract P2pFacetTest is Test {
             keccak256(abi.encodePacked("P2pFacet"))
         ) {
             selectors = new bytes4[](24);
-            selectors[0] = bytes4(keccak256("depositCollateral(address,uint256)"));
-            selectors[1] = bytes4(keccak256("withdrawCollateral(address,uint256)"));
-            selectors[2] = bytes4(keccak256("createLendingRequest(uint256,uint16,uint256,uint256,address)"));
-            selectors[3] = bytes4(keccak256("createAndMatchLendingRequest(uint256,uint16,uint256,uint256,address)"));
-            selectors[4] = bytes4(keccak256("createLoanListingWithMatching(uint256,uint256,uint256,uint256,uint16,address,bool)"));
+            selectors[0] = bytes4(
+                keccak256("depositCollateral(address,uint256)")
+            );
+            selectors[1] = bytes4(
+                keccak256("withdrawCollateral(address,uint256)")
+            );
+            selectors[2] = bytes4(
+                keccak256(
+                    "createLendingRequest(uint256,uint16,uint256,uint256,address)"
+                )
+            );
+            selectors[3] = bytes4(
+                keccak256(
+                    "createAndMatchLendingRequest(uint256,uint16,uint256,uint256,address)"
+                )
+            );
+            selectors[4] = bytes4(
+                keccak256(
+                    "createLoanListingWithMatching(uint256,uint256,uint256,uint256,uint16,address,bool)"
+                )
+            );
             selectors[5] = bytes4(keccak256("serviceRequest(uint96,address)"));
             selectors[6] = bytes4(keccak256("repayLoan(uint96,uint256)"));
             selectors[7] = bytes4(keccak256("closeRequest(uint96)"));
-            selectors[8] = bytes4(keccak256("requestLoanFromListing(uint96,uint256)"));
+            selectors[8] = bytes4(
+                keccak256("requestLoanFromListing(uint96,uint256)")
+            );
             selectors[9] = bytes4(keccak256("liquidateUserRequest(uint96)"));
             selectors[10] = bytes4(keccak256("getRequest(uint96)"));
             selectors[11] = bytes4(keccak256("getLoanListing(uint96)"));
             selectors[12] = bytes4(keccak256("getUserPosition(address)"));
             selectors[13] = bytes4(keccak256("getUserCollateral(address)"));
-            selectors[14] = bytes4(keccak256("getUserCollateralAmount(address,address)"));
+            selectors[14] = bytes4(
+                keccak256("getUserCollateralAmount(address,address)")
+            );
             selectors[15] = bytes4(keccak256("getCollateralValue(address)"));
             selectors[16] = bytes4(keccak256("getTokenData(address)"));
             selectors[17] = bytes4(keccak256("getSupportedTokens()"));
             selectors[18] = bytes4(keccak256("activtateFailSafe(bool)"));
-            selectors[19] = bytes4(keccak256("getUsdValue(address,uint256,uint8)"));
-            selectors[20] = bytes4(keccak256("addCollateralTokens(address[],address[])"));
-            selectors[21] = bytes4(keccak256("createLoanListing(uint256,uint256,uint256,uint256,uint16,address)"));
-            selectors[22] = bytes4(keccak256("findMatchingLendingOffer(address,uint256,uint16,uint256)"));
+            selectors[19] = bytes4(
+                keccak256("getUsdValue(address,uint256,uint8)")
+            );
+            selectors[20] = bytes4(
+                keccak256("addCollateralTokens(address[],address[])")
+            );
+            selectors[21] = bytes4(
+                keccak256(
+                    "createLoanListing(uint256,uint256,uint256,uint256,uint16,address)"
+                )
+            );
+            selectors[22] = bytes4(
+                keccak256(
+                    "findMatchingLendingOffer(address,uint256,uint16,uint256)"
+                )
+            );
             selectors[23] = bytes4(keccak256("receive()"));
         }
         return selectors;
     }
 
-
     function testRepaymentCalculation() public {
         // Test that interest calculations are correct
         uint256 principal = 1000 * 10 ** 6; // 1000 USDC
         uint16 interest = 500; // 5%
-        
+
         uint96 listingId = createLendingListing(
             lender1,
             principal,
@@ -650,19 +694,25 @@ contract P2pFacetTest is Test {
         );
 
         switchSigner(borrower1);
-        P2pFacet(payable(diamond)).depositCollateral(address(weth), 2 * 10 ** 18); // 2 WETH as collateral
-        
+        P2pFacet(payable(diamond)).depositCollateral(
+            address(weth),
+            2 * 10 ** 18
+        ); // 2 WETH as collateral
+
         // Request and get the loan
         P2pFacet(payable(diamond)).requestLoanFromListing(listingId, principal);
-        
+
         // Calculate expected repayment
         uint256 expectedRepayment = principal + (principal * interest) / 10000;
-        
+
         // Get actual required repayment
         Request memory request = P2pFacet(payable(diamond)).getRequest(1);
-        assertEq(request.totalRepayment, expectedRepayment, "Incorrect repayment calculation");
+        assertEq(
+            request.totalRepayment,
+            expectedRepayment,
+            "Incorrect repayment calculation"
+        );
     }
-
 
     function testPartialRepayment() public {
         // Test partial loan repayment
@@ -678,15 +728,25 @@ contract P2pFacetTest is Test {
         vm.stopPrank();
 
         switchSigner(borrower1);
-        P2pFacet(payable(diamond)).depositCollateral(address(weth), 2 * 10 ** 18);
-        P2pFacet(payable(diamond)).requestLoanFromListing(listingId, 1000 * 10 ** 6);
-        
+        P2pFacet(payable(diamond)).depositCollateral(
+            address(weth),
+            2 * 10 ** 18
+        );
+        P2pFacet(payable(diamond)).requestLoanFromListing(
+            listingId,
+            1000 * 10 ** 6
+        );
+
         // Repay half the loan
         uint256 partialAmount = 500 * 10 ** 6;
         P2pFacet(payable(diamond)).repayLoan(1, partialAmount);
-        
+
         Request memory request = P2pFacet(payable(diamond)).getRequest(1);
-        assertEq(request.totalRepayment, 550 * 10 ** 6, "Incorrect remaining loan amount");
+        assertEq(
+            request.totalRepayment,
+            550 * 10 ** 6,
+            "Incorrect remaining loan amount"
+        );
     }
 
     // function testMultipleCollateralTypes() public {
@@ -694,7 +754,7 @@ contract P2pFacetTest is Test {
     //     switchSigner(borrower1);
     //     p2pF.depositCollateral(address(weth), 1 * 10 ** 18); // 1 WETH
     //     p2pF.depositCollateral(address(wbtc), 0.1 * 10 ** 8); // 0.1 WBTC
-        
+
     //     switchSigner(lender1);
     //     uint96 listingId = createLendingListing(
     //         lender1,
@@ -708,7 +768,7 @@ contract P2pFacetTest is Test {
 
     //     switchSigner(borrower1);
     //     p2pF.requestLoanFromListing(listingId, 2000 * 10 ** 6);
-        
+
     //     // Verify both collateral types are properly locked
     //     (address[] memory tokens, uint256[] memory amounts) = p2pF.getUserCollateral(borrower1);
     //     assertEq(tokens.length, 2, "Should have 2 collateral types");
@@ -719,7 +779,7 @@ contract P2pFacetTest is Test {
         // Test collateral withdrawal restrictions when loan is active
         switchSigner(borrower1);
         P2pFacet(payable(diamond)).depositCollateral(address(weth), 1.5 ether);
-        
+
         // switchSigner(lender1);
         uint96 listingId = createLendingListing(
             lender1,
@@ -732,11 +792,17 @@ contract P2pFacetTest is Test {
         );
 
         switchSigner(borrower1);
-        P2pFacet(payable(diamond)).requestLoanFromListing(listingId, 1000 * 10 ** 6);
-        
+        P2pFacet(payable(diamond)).requestLoanFromListing(
+            listingId,
+            1000 * 10 ** 6
+        );
+
         // Attempt to withdraw collateral
         vm.expectRevert(Protocol__InsufficientCollateralDeposited.selector);
-        P2pFacet(payable(diamond)).withdrawCollateral(address(weth), 1 * 10 ** 18);
+        P2pFacet(payable(diamond)).withdrawCollateral(
+            address(weth),
+            1 * 10 ** 18
+        );
     }
 
     // function testLoanRefinancing() public {
@@ -755,7 +821,7 @@ contract P2pFacetTest is Test {
     //     switchSigner(borrower1);
     //     p2pF.depositCollateral(address(weth), 2 * 10 ** 18);
     //     p2pF.requestLoanFromListing(listingId1, 1000 * 10 ** 6);
-        
+
     //     // Create new listing with better terms
     //     switchSigner(lender2);
     //     uint96 listingId2 = createLendingListing(
@@ -771,14 +837,16 @@ contract P2pFacetTest is Test {
     //     // Refinance the loan
     //     switchSigner(borrower1);
     //     p2pF.refinanceLoan(1, listingId2);
-        
+
     //     Request memory newRequest = p2pF.getRequest(2);
     //     assertEq(newRequest.interest, 500, "Interest rate should be updated");
     // }
 
     function testFallback() public {
         // Test fallback function reverts
-        (bool success, ) = address(p2pF).call(abi.encodeWithSignature("nonexistentFunction()"));
+        (bool success, ) = address(p2pF).call(
+            abi.encodeWithSignature("nonexistentFunction()")
+        );
         assertFalse(success, "Should revert on undefined function");
     }
 
@@ -786,20 +854,24 @@ contract P2pFacetTest is Test {
         // Test receive function accepts ETH
         (bool success, ) = address(p2pF).call{value: 1 ether}("");
         assertTrue(success, "Should accept ETH");
-        assertEq(address(p2pF).balance, 1 ether, "Balance should match sent amount");
+        assertEq(
+            address(p2pF).balance,
+            1 ether,
+            "Balance should match sent amount"
+        );
     }
 
     // function testInitialization() public {
     //     // Test protocol initialization
     //     (address[] memory tokens, address[] memory priceFeeds) = p2pF.getSupportedTokens();
-        
+
     //     assertEq(tokens.length, 3, "Should have 3 supported tokens");
     //     assertEq(priceFeeds.length, 3, "Should have 3 price feeds");
-        
+
     //     assertEq(tokens[0], address(usdc), "USDC address mismatch");
     //     assertEq(tokens[1], address(weth), "WETH address mismatch");
     //     assertEq(tokens[2], address(wbtc), "WBTC address mismatch");
-        
+
     //     assertEq(priceFeeds[0], address(usdcPriceFeed), "USDC price feed mismatch");
     //     assertEq(priceFeeds[1], address(wethPriceFeed), "WETH price feed mismatch");
     //     assertEq(priceFeeds[2], address(wbtcPriceFeed), "WBTC price feed mismatch");
@@ -809,7 +881,7 @@ contract P2pFacetTest is Test {
     //     // Test that Operations functions are accessible
     //     switchSigner(borrower1);
     //     p2pF.depositCollateral(address(weth), 1 ether);
-        
+
     //     uint256 collateralValue = p2pF.getCollateralValue(borrower1);
     //     assertTrue(collateralValue > 0, "Collateral value should be non-zero");
     // }
@@ -818,7 +890,7 @@ contract P2pFacetTest is Test {
     //     // Test that Getters functions are accessible
     //     switchSigner(borrower1);
     //     p2pF.depositCollateral(address(weth), 1 ether);
-        
+
     //     (address[] memory tokens, uint256[] memory amounts) = p2pF.getUserCollateral(borrower1);
     //     assertEq(tokens.length, amounts.length, "Arrays should have same length");
     //     assertTrue(amounts[0] > 0, "Should have collateral amount");
@@ -888,15 +960,18 @@ contract MockToken is IERC20 {
         uint256 amount
     ) public override returns (bool) {
         _transfer(sender, recipient, amount);
-        
+
         uint256 currentAllowance = _allowances[sender][msg.sender];
         if (currentAllowance != type(uint256).max) {
-            require(currentAllowance >= amount, "ERC20: transfer amount exceeds allowance");
+            require(
+                currentAllowance >= amount,
+                "ERC20: transfer amount exceeds allowance"
+            );
             unchecked {
                 _approve(sender, msg.sender, currentAllowance - amount);
             }
         }
-        
+
         return true;
     }
 
@@ -907,7 +982,10 @@ contract MockToken is IERC20 {
     ) internal {
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
-        require(_balances[sender] >= amount, "ERC20: transfer amount exceeds balance");
+        require(
+            _balances[sender] >= amount,
+            "ERC20: transfer amount exceeds balance"
+        );
 
         _balances[sender] = _balances[sender] - amount;
         _balances[recipient] = _balances[recipient] + amount;
