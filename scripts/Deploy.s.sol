@@ -168,9 +168,9 @@ contract DiamondDeployer is Script, IDiamondCut {
         DiamondLoupeFacet(address(diamond)).facetAddresses();
 
         // Deploy mock tokens
-        usdc = new MockERC20("USD Coin", "USDC", 6);
-        weth = new MockERC20("Wrapped ETH", "WETH", 18);
-        wbtc = new MockERC20("Wrapped BTC", "WBTC", 8);
+        usdc = new MockERC20("USD Coin", "USDC", 6, 1000);
+        weth = new MockERC20("Wrapped ETH", "WETH", 18, 1000);
+        wbtc = new MockERC20("Wrapped BTC", "WBTC", 8, 1000);
 
         // Deploy mock price feeds
         // usdcPriceFeed = new MockPriceFeed(USDC_PRICE, 8);
@@ -238,6 +238,7 @@ contract DiamondDeployer is Script, IDiamondCut {
         console.log("USDC deployed at: ", address(usdc));
         console.log("WETH deployed at: ", address(weth));
         console.log("WBTC deployed at: ", address(wbtc));
+        vm.stopBroadcast();
     }
 
     function generateSelectors(
