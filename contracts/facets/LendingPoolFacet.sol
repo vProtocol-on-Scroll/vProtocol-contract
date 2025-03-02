@@ -12,6 +12,7 @@ import {VTokenVault} from "../VTokenVault.sol";
 import "../model/Protocol.sol";
 import "../model/Event.sol";
 import {Constants} from "../utils/constants/Constant.sol";
+import {IWeth} from "../interfaces/IWeth.sol";
 
 /**
  * @title LendingPoolFacet
@@ -314,24 +315,23 @@ contract LendingPoolFacet {
         return loanId;
     }
 
-    /**
+     /**
      * @notice Deposit tokens into the lending pool
      * @param token Token to deposit
      * @param amount Amount to deposit
      * @param asCollateral Whether to mark as collateral
-     * @param useVault Whether to mint vault tokens for this deposit
-     * @return shares Amount of shares received (or vault tokens if useVault is true)
+     * @return shares Amount of shares received
      */
     function deposit(
         address token, 
         uint256 amount,
-        bool asCollateral,
-        bool useVault
+        bool asCollateral
     ) external payable returns (uint256 shares) {
         require(amount > 0, "Amount must be greater than 0");
         require(s.supportedTokens[token], "Token not supported");
         require(!s.isPaused, "Protocol is paused");
-        require(!s.lendingPoolConfig.isPaused, "Pool is paused");
+        require(!s.lendingPoolConfig.isPaused, "Lending pool is paused");
+
         bool isNativeToken = token == Constants.NATIVE_TOKEN;
         
         // Handle native token
@@ -351,47 +351,14 @@ contract LendingPoolFacet {
         // Update state with latest interest rates
         _updateState(token);
 
-        // Check if we should use vault
-        if (useVault) {
-            // Ensure vault exists for this token
-            address vaultAddress = s.vaults[token];
-            require(vaultAddress != address(0), "No vault for this token");
-            
-            // For native token, need to wrap to WETH first
-            if (isNativeToken) {
-                // Logic to wrap ETH to WETH would go here
-                // For simplicity, assuming direct deposit
-                
-                // Deposit to vault and mint vault tokens
-                IVTokenVault vault = IVTokenVault(vaultAddress);
-                
-                // Approve tokens for vault
-                IERC20(Constants.WETH).approve(vaultAddress, amount);
-                
-                // Deposit and get vault tokens
-                shares = vault.deposit(amount, msg.sender);
-            } else {
-                // Approve tokens for vault
-                IERC20(token).approve(vaultAddress, amount);
-                
-                // Deposit to vault and mint vault tokens
-                IVTokenVault vault = IVTokenVault(vaultAddress);
-                shares = vault.deposit(amount, msg.sender);
-            }
-            
-            // Update protocol accounting
-            s.vaultDeposits[token] += amount;
+        // Calculate shares based on current exchange rate
+        shares = _calculatePoolShares(token, amount);
+        
+        // Update user position based on intended use
+        if (asCollateral) {
+            s.userPositions[msg.sender].collateral[token] += amount;
         } else {
-            // Standard deposit without vault
-            // Calculate shares based on current exchange rate
-            shares = _calculatePoolShares(token, amount);
-            
-            // Update user position based on intended use
-            if (asCollateral) {
-                s.userPositions[msg.sender].collateral[token] += amount;
-            } else {
-                s.userPositions[msg.sender].poolDeposits[token] += shares;
-            }
+            s.userPositions[msg.sender].poolDeposits[token] += shares;
         }
         
         s.userPositions[msg.sender].lastUpdate = block.timestamp;
@@ -809,19 +776,30 @@ contract LendingPoolFacet {
         emit Event.PoolPauseSet(paused);
     }
 
-    /**
+   /**
      * @notice Callback from VToken vault when deposit occurs
      * @param asset Token deposited
      * @param amount Amount deposited
      * @param depositor Address of the depositor
+     * @param transferAssets Whether to transfer assets (false if already done)
      */
     function notifyVaultDeposit(
         address asset,
         uint256 amount,
-        address depositor
+        address depositor,
+        bool transferAssets
     ) external {
         // Verify caller is a valid vault
         require(s.vaults[asset] == msg.sender, "Only vault can call");
+        
+        // Transfer assets if requested (if not already transferred)
+        if (transferAssets) {
+            IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+        }
+
+        if(asset == Constants.NATIVE_TOKEN) {
+            IWeth(Constants.WETH).withdraw(amount);
+        }
         
         // Update vault deposits
         s.vaultDeposits[asset] += amount;
@@ -838,14 +816,19 @@ contract LendingPoolFacet {
      * @param asset Token withdrawn
      * @param amount Amount withdrawn
      * @param receiver Address receiving the tokens
+     * @param transferAssets Whether to transfer assets
      */
     function notifyVaultWithdrawal(
         address asset,
         uint256 amount,
-        address receiver
+        address receiver,
+        bool transferAssets
     ) external {
         // Verify caller is a valid vault
         require(s.vaults[asset] == msg.sender, "Only vault can call");
+        
+        // Ensure sufficient liquidity
+        require(s.tokenData[asset].poolLiquidity >= amount, "Insufficient liquidity");
         
         // Update vault deposits
         s.vaultDeposits[asset] -= amount;
@@ -854,9 +837,32 @@ contract LendingPoolFacet {
         s.tokenData[asset].poolLiquidity -= amount;
         s.tokenData[asset].totalDeposits -= amount;
         
+        // Transfer assets if requested
+        if (transferAssets) {
+            IERC20(asset).safeTransfer(receiver, amount);
+        }
+        
         emit Event.VaultWithdrawn(asset, receiver, amount);
     }
 
+    /**
+     * @notice Get vault's total assets 
+     * @param asset Token address
+     * @return Total assets for the vault
+     */
+    function getVaultTotalAssets(address asset) external view returns (uint256) {
+        return s.vaultDeposits[asset];
+    }
+
+    /**
+     * @notice Get vault's exchange rate
+     * @param asset Token address
+     * @return Exchange rate for the vault
+     */
+    function getVaultExchangeRate(address asset) external view returns (uint256) {
+        // Exchange rate is the ratio of the total assets to the total deposits
+        return (s.vaultDeposits[asset] * 1e18) / s.tokenData[asset].totalDeposits;
+    }
     /**
      * @notice Deploy a new VToken vault for a supported token
      * @param token Token address
@@ -970,13 +976,13 @@ contract LendingPoolFacet {
      * @notice Check if collateral removal is safe for a user's loans
      * @param user User address
      * @param token Collateral token
-     * @param amount Amount to remove
+     * @param {uint256} Amount to remove
      * @return Whether removal is safe
      */
     function _checkCollateralRemovalSafety(
         address user,
         address token,
-        uint256 amount
+        uint256 /**amount */
     ) internal view returns (bool) {
         // Get user's loans
         uint256[] storage userLoans = s.userPoolLoans[user];
