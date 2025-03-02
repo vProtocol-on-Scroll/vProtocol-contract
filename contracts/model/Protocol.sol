@@ -449,6 +449,19 @@ enum MarketCondition {
 }
 
 /**
+ * @dev Enum for loan status
+ */
+enum LoanStatus {
+    NONE,
+    ACTIVE,
+    REPAID,
+    LIQUIDATED,
+    DEFAULTED
+}
+
+
+
+/**
  * @dev Enum representing the status of a loan request.
  * OPEN - The loan request is open and waiting for a lender.
  * SERVICED - The loan request has been accepted and is currently serviced by a lender.
@@ -502,4 +515,34 @@ struct LendingOffer {
     uint256 returnDuration;
     address tokenAddress;
     uint256 score;
+}
+
+
+// Helper struct for tracking collateral info during loan creation
+struct CollateralInfo {
+    address token;
+    uint256 amount;
+    uint256 value;
+}
+
+// Updated Pool Loan structure to support multiple collaterals
+struct PoolLoan {
+    address borrower;
+    address borrowToken;
+    uint256 borrowAmount;
+    uint256 interestRate;
+    uint256 lastInterestUpdate;
+    LoanStatus status;
+    address[] collaterals;
+    mapping(address => uint256) collateralAmounts;
+}
+
+struct PoolLoanDetails {
+    address borrower;
+    address borrowToken;
+    uint256 borrowAmount;
+    uint256 interestRate;
+    uint256 lastInterestUpdate;
+    LoanStatus status;
+    address[] collaterals;
 }

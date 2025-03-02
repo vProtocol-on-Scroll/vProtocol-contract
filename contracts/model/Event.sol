@@ -245,4 +245,51 @@ library Event {
         uint256 lastUpdateTimestamp
     );
     
+    event PoolLoanCreated(
+        uint256 indexed loanId,
+        address indexed borrower,
+        address[] collateralTokens,
+        address borrowToken,
+        uint256[] collateralAmounts,
+        uint256 borrowAmount,
+        uint256 interestRate
+    );
+    
+    event PoolLoanLiquidated(
+        uint256 indexed loanId,
+        address indexed borrower,
+        address indexed liquidator,
+        address borrowToken,
+        address[] collateralTokens,
+        uint256 debtAmount,
+        uint256 collateralLiquidated
+    );
+
+     
+    event PoolLoanRepaid(
+        uint256 indexed loanId,
+        address indexed repayer,
+        uint256 amount,
+        bool fullyRepaid
+    );
+    
+    event CollateralToggled(
+        address indexed user,
+        address indexed token,
+        uint256 amount,
+        bool asCollateral
+    );
+    
+    event VaultDeposited(
+        address indexed token,
+        address indexed depositor,
+        uint256 amount
+    );
+    
+    event VaultWithdrawn(
+        address indexed token,
+        address indexed receiver,
+        uint256 amount
+    );
+
 }
