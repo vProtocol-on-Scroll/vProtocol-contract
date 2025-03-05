@@ -537,6 +537,16 @@ struct PoolLoan {
     mapping(address => uint256) collateralAmounts;
 }
 
+/**
+ * @dev Struct to store details about a pool loan.
+ * @param borrower The address of the borrower
+ * @param borrowToken The address of the token being borrowed
+ * @param borrowAmount The amount of tokens being borrowed
+ * @param interestRate The interest rate for the loan
+ * @param lastInterestUpdate The timestamp of the last interest update
+ * @param status The status of the loan
+ * @param collaterals The addresses of the collateral tokens
+ */                                                 
 struct PoolLoanDetails {
     address borrower;
     address borrowToken;
@@ -545,4 +555,18 @@ struct PoolLoanDetails {
     uint256 lastInterestUpdate;
     LoanStatus status;
     address[] collaterals;
+}
+
+/**
+ * @dev Struct to store flash loan configuration.
+ * @param isInitialized Whether the flash loan system is initialized
+ * @param feeBps Flash loan fee in basis points (e.g., 9 = 0.09%)
+ * @param totalFlashLoans Total number of flash loans executed
+ * @param totalFeesCollected Total fees collected from flash loans
+ */
+struct FlashLoanConfig {
+    bool isInitialized;
+    uint256 feeBps;
+    uint256 totalFlashLoans;
+    uint256 totalFeesCollected;
 }

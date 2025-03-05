@@ -88,6 +88,7 @@ library LibAppStorage {
         address protocolToken;
         address rewardToken;
         uint8 rewardTokenDecimals;
+        uint256 protocolFees;
         
         // Lending pool config
         LendingPoolConfig lendingPoolConfig;
@@ -95,6 +96,9 @@ library LibAppStorage {
         // Rebalancing strategy
         mapping(uint256 => RebalancingStrategy) strategies;
         mapping(uint256 => StrategyPerformance) strategyPerformance;
+
+        // Flash loan config
+        FlashLoanConfig flashLoanConfig;
     }
 
     function layout() internal pure returns (Layout storage l) {
