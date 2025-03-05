@@ -33,36 +33,46 @@ contract P2pFacet {
     receive() external payable {}
 
     /**
-     * @notice Create a position with multi-collateral and match with existing listings
-     * @param loanToken The token to borrow
-     * @param borrowAmount The amount to borrow
-     * @param maxInterest Maximum acceptable interest rate
-     * @param returnDuration Loan duration
-     * @param expirationDate When the request expires if not filled
-     * @param collateralTokens Array of collateral token addresses
-     * @param collateralAmounts Array of collateral amounts
-     * @return requestId The ID of the created request (or matched loan)
-     * @return matched Whether the request was automatically matched
-     */
-    function createPosition(
-        address loanToken,
-        uint256 borrowAmount,
-        uint16 maxInterest,
-        uint256 returnDuration,
-        uint256 expirationDate,
-        address[] calldata collateralTokens,
-        uint256[] calldata collateralAmounts
-    ) internal returns (uint96 requestId, bool matched) {
-        require(!s.isPaused, "Protocol is paused");
-        require(borrowAmount > 0, "Borrow amount must be greater than 0");
-        require(s.tokenData[loanToken].isLoanable, "Token not loanable");
-        require(expirationDate > block.timestamp, "Invalid expiration");
-        require(returnDuration > block.timestamp + 1 days, "Invalid duration");
+ * @notice Create a position with multi-collateral and match with existing listings
+ * @param loanToken The token to borrow
+ * @param borrowAmount The amount to borrow
+ * @param maxInterest Maximum acceptable interest rate
+ * @param returnDuration Loan duration
+ * @param expirationDate When the request expires if not filled
+ * @param collateralTokens Array of collateral token addresses
+ * @param collateralAmounts Array of collateral amounts
+ * @param useExistingCollateral Whether to use existing collateral if needed
+ * @return requestId The ID of the created request (or matched loan)
+ * @return matched Whether the request was automatically matched
+ */
+function createPosition(
+    address loanToken,
+    uint256 borrowAmount,
+    uint16 maxInterest,
+    uint256 returnDuration,
+    uint256 expirationDate,
+    address[] calldata collateralTokens,
+    uint256[] calldata collateralAmounts,
+    bool useExistingCollateral
+) internal returns (uint96 requestId, bool matched) {
+    require(!s.isPaused, "Protocol is paused");
+    require(borrowAmount > 0, "Borrow amount must be greater than 0");
+    require(s.tokenData[loanToken].isLoanable, "Token not loanable");
+    require(expirationDate > block.timestamp, "Invalid expiration");
+    require(returnDuration > block.timestamp + 1 days, "Invalid duration");
+    
+    // Check that either new collateral is provided OR we're using existing collateral
+    bool hasNewCollateral = collateralTokens.length > 0 && collateralAmounts.length > 0;
+    require(hasNewCollateral || useExistingCollateral, "Must provide collateral or use existing");
+    
+    // If new collateral provided, ensure arrays match
+    if (hasNewCollateral) {
         require(collateralTokens.length == collateralAmounts.length, "Array length mismatch");
-        require(collateralTokens.length > 0, "Must provide collateral");
-        
-        // Handle native token collateral
-        uint256 nativeValue = 0;
+    }
+    
+    // Handle native token collateral
+    uint256 nativeValue = 0;
+    if (hasNewCollateral) {
         for (uint i = 0; i < collateralTokens.length; i++) {
             if (collateralTokens[i] == Constants.NATIVE_TOKEN) {
                 nativeValue += collateralAmounts[i];
@@ -72,33 +82,41 @@ contract P2pFacet {
         if (nativeValue > 0) {
             require(msg.value >= nativeValue, "Insufficient ETH sent");
         }
-        
-        // First, try to find a matching listing
-        uint96 matchedListingId = _findMatchingLendingOffer(
-            loanToken,
-            borrowAmount,
-            maxInterest,
-            returnDuration
-        );
-        
-        // If a match is found, process the match
-        if (matchedListingId > 0) {
-            // First deposit the collateral
+    }
+    
+    // First, try to find a matching listing
+    uint96 matchedListingId = _findMatchingLendingOffer(
+        loanToken,
+        borrowAmount,
+        maxInterest,
+        returnDuration
+    );
+    
+    // If a match is found, process the match
+    if (matchedListingId > 0) {
+        // First deposit any new collateral if provided
+        if (hasNewCollateral) {
             _depositMultiCollateral(collateralTokens, collateralAmounts);
-            
-            // Then use it to borrow from the matched listing
-            _requestLoanFromListing(matchedListingId, borrowAmount);
-            
-            // The most recent request ID will be the one created
-            return (s.requestId, true);
         }
         
-        // If no match found, create a new request
-        // First deposit the collateral
-        _depositMultiCollateral(collateralTokens, collateralAmounts);
+        // Then use it to borrow from the matched listing
+        _requestLoanFromListing(matchedListingId, borrowAmount);
         
-        // Calculate USD values for collateral
-        uint256 totalCollateralUSD = 0;
+        // The most recent request ID will be the one created
+        return (s.requestId, true);
+    }
+    
+    // If no match found, create a new request
+    // First deposit any new collateral if provided
+    if (hasNewCollateral) {
+        _depositMultiCollateral(collateralTokens, collateralAmounts);
+    }
+    
+    // Calculate USD values for collateral
+    uint256 totalCollateralUSD = 0;
+    
+    // First add new collateral values if any
+    if (hasNewCollateral) {
         for (uint i = 0; i < collateralTokens.length; i++) {
             address token = collateralTokens[i];
             uint256 amount = collateralAmounts[i];
@@ -106,36 +124,101 @@ contract P2pFacet {
             uint8 decimal = LibToken.getDecimals(token);
             totalCollateralUSD += s.getTokenUsdValue(token, amount, decimal);
         }
-        
-        // Calculate loan USD value
-        uint8 loanDecimal = LibToken.getDecimals(loanToken);
-        uint256 loanUsdValue = s.getTokenUsdValue(loanToken, borrowAmount, loanDecimal);
-        
-        // Check if user has sufficient collateral for the loan
-        require(loanUsdValue * 10000 <= totalCollateralUSD * Constants.MAX_LTV, "Insufficient collateral");
-        
-        // Create the request
-        requestId = ++s.requestId;
-        
-        Request storage newRequest = s.requests[requestId];
-        newRequest.requestId = requestId;
-        newRequest.author = msg.sender;
-        newRequest.amount = borrowAmount;
-        newRequest.interest = maxInterest;
-        newRequest.returnDate = returnDuration;
-        newRequest.expirationDate = expirationDate;
-        newRequest.totalRepayment = _calculateLoanInterest(borrowAmount, maxInterest);
-        newRequest.loanRequestAddr = loanToken;
-        newRequest.status = Status.OPEN;
-        newRequest.collateralTokens = collateralTokens;
-        
-        // Lock collateral proportionally
-        _lockCollateralForRequest(requestId, loanUsdValue, collateralTokens, totalCollateralUSD);
-        
-        emit Event.RequestCreated(msg.sender, requestId, borrowAmount, maxInterest);
-        
-        return (requestId, false);
     }
+    
+    // Then add existing collateral if requested
+    if (useExistingCollateral) {
+        for (uint i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+            uint256 existingAmount = s.userPositions[msg.sender].collateral[token];
+            
+            if (existingAmount > 0) {
+                uint8 decimal = LibToken.getDecimals(token);
+                totalCollateralUSD += s.getTokenUsdValue(token, existingAmount, decimal);
+            }
+        }
+    }
+    
+    // Calculate loan USD value
+    uint8 loanDecimal = LibToken.getDecimals(loanToken);
+    uint256 loanUsdValue = s.getTokenUsdValue(loanToken, borrowAmount, loanDecimal);
+    
+    // Check if user has sufficient collateral for the loan
+    require(loanUsdValue * 10000 <= totalCollateralUSD * Constants.MAX_LTV, "Insufficient collateral");
+    
+    // Create the request
+    requestId = ++s.requestId;
+    
+    Request storage newRequest = s.requests[requestId];
+    newRequest.requestId = requestId;
+    newRequest.author = msg.sender;
+    newRequest.amount = borrowAmount;
+    newRequest.interest = maxInterest;
+    newRequest.returnDate = returnDuration;
+    newRequest.expirationDate = expirationDate;
+    newRequest.totalRepayment = _calculateLoanInterest(borrowAmount, maxInterest);
+    newRequest.loanRequestAddr = loanToken;
+    newRequest.status = Status.OPEN;
+    
+    // Build collateral tokens list
+    address[] memory allCollateralTokens;
+    if (useExistingCollateral) {
+        // Count existing collateral tokens
+        uint256 existingTokenCount = 0;
+        for (uint i = 0; i < s.s_supportedTokens.length; i++) {
+            if (s.userPositions[msg.sender].collateral[s.s_supportedTokens[i]] > 0) {
+                existingTokenCount++;
+            }
+        }
+        
+        // Create expanded array to include both new and existing tokens
+        uint256 totalCollateralCount = hasNewCollateral ? 
+            existingTokenCount + collateralTokens.length : existingTokenCount;
+        
+        allCollateralTokens = new address[](totalCollateralCount);
+        
+        // Add existing tokens first
+        uint256 currentIndex = 0;
+        for (uint i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+            if (s.userPositions[msg.sender].collateral[token] > 0) {
+                allCollateralTokens[currentIndex] = token;
+                currentIndex++;
+            }
+        }
+        
+        // Then add new tokens if any
+        if (hasNewCollateral) {
+            for (uint i = 0; i < collateralTokens.length; i++) {
+                // Skip duplicates
+                bool isDuplicate = false;
+                for (uint j = 0; j < currentIndex; j++) {
+                    if (allCollateralTokens[j] == collateralTokens[i]) {
+                        isDuplicate = true;
+                        break;
+                    }
+                }
+                
+                if (!isDuplicate) {
+                    allCollateralTokens[currentIndex] = collateralTokens[i];
+                    currentIndex++;
+                }
+            }
+        }
+    } else {
+        // Just use the newly provided tokens
+        allCollateralTokens = collateralTokens;
+    }
+    
+    newRequest.collateralTokens = allCollateralTokens;
+    
+    // Lock collateral proportionally
+    _lockCollateralForRequest(requestId, loanUsdValue, allCollateralTokens, totalCollateralUSD);
+    
+    emit Event.RequestCreated(msg.sender, requestId, borrowAmount, maxInterest);
+    
+    return (requestId, false);
+}
 
     /**
      * @notice Service a lending request (fund it)
@@ -323,36 +406,39 @@ contract P2pFacet {
     }
 
     /**
-     * @notice Create a lending request and try auto-matching
-     * @param amount Amount of the loan
-     * @param interest Interest rate
-     * @param returnDuration Loan duration
-     * @param expirationDate Expiration date
-     * @param loanToken Loan token
-     * @param collateralTokens Array of collateral tokens
-     * @param collateralAmounts Array of collateral amounts
-     * @return requestId The ID of the created request
-     * @return matched Whether the request was matched
-     */
-    function createAndMatchLendingRequest(
-        uint256 amount,
-        uint16 interest,
-        uint256 returnDuration,
-        uint256 expirationDate,
-        address loanToken,
-        address[] calldata collateralTokens,
-        uint256[] calldata collateralAmounts
-    ) external payable returns (uint96 requestId, bool matched) {
-        return createPosition(
-            loanToken,
-            amount,
-            interest,
-            returnDuration,
-            expirationDate,
-            collateralTokens,
-            collateralAmounts
-        );
-    }
+ * @notice Create a lending request and try auto-matching
+ * @param amount Amount of the loan
+ * @param interest Interest rate
+ * @param returnDuration Loan duration
+ * @param expirationDate Expiration date
+ * @param loanToken Loan token
+ * @param collateralTokens Array of collateral tokens
+ * @param collateralAmounts Array of collateral amounts
+ * @param useExistingCollateral Whether to use existing collateral
+ * @return requestId The ID of the created request
+ * @return matched Whether the request was matched
+ */
+function createAndMatchLendingRequest(
+    uint256 amount,
+    uint16 interest,
+    uint256 returnDuration,
+    uint256 expirationDate,
+    address loanToken,
+    address[] calldata collateralTokens,
+    uint256[] calldata collateralAmounts,
+    bool useExistingCollateral
+) external payable returns (uint96 requestId, bool matched) {
+    return createPosition(
+        loanToken,
+        amount,
+        interest,
+        returnDuration,
+        expirationDate,
+        collateralTokens,
+        collateralAmounts,
+        useExistingCollateral
+    );
+}
 
     /**
      * @notice Repay a P2P loan
