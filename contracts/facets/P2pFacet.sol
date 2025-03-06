@@ -211,6 +211,10 @@ function createPosition(
     }
     
     newRequest.collateralTokens = allCollateralTokens;
+
+    s.p2pBalances.totalBorrowOrders += newRequest.totalRepayment;
+    s.userPositions[msg.sender].p2pBorrowedAmount[loanToken] += borrowAmount;
+
     
     // Lock collateral proportionally
     _lockCollateralForRequest(requestId, loanUsdValue, allCollateralTokens, totalCollateralUSD);
@@ -476,18 +480,21 @@ function createAndMatchLendingRequest(
             IERC20(token).safeTransferFrom(msg.sender, address(this), repayAmount);
         }
         
+        
+        uint256 remainingRepayment = request.totalRepayment - repayAmount;
         // Update request
-        request.totalRepayment -= repayAmount;
+        request.totalRepayment = remainingRepayment;
         
         // Update P2P balances for rebalancing
         s.p2pBalances.totalBorrowOrders -= repayAmount;
+        
         
         // Update user position
         UserPosition storage position = s.userPositions[msg.sender];
         position.p2pBorrowedAmount[token] -= repayAmount;
         
         // If fully repaid, close the request and release collateral
-        if (request.totalRepayment == 0) {
+        if (remainingRepayment == 0) {
             request.status = Status.CLOSED;
             
             // Release locked collateral
@@ -1056,5 +1063,13 @@ function createAndMatchLendingRequest(
         emit Event.LoanListingCreated(listingId, msg.sender, loanCurrency, amount);
         
         return listingId;
+    }
+    
+    function getLoanListing(uint96 listingId) external view returns (LoanListing memory) {
+        return s.loanListings[listingId];
+    }
+
+    function getRequest(uint96 requestId) external view returns (Request memory) {
+        return s.requests[requestId];
     }
 }
