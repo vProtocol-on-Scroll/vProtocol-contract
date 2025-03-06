@@ -74,7 +74,7 @@ contract DiamondDeployer is Script, IDiamondCut {
         p2pF = new P2pFacet();
         pauseableF = new PauseableFacet();
         rebalancingStrategyF = new RebalancingStrategyFacet();
-        rewardDistributionF = new RewardDistributionFacet();
+        // rewardDistributionF = new RewardDistributionFacet();
         yieldOptimizationF = new YieldOptimizationFacet();
 
         //upgrade diamond with facets
@@ -168,9 +168,9 @@ contract DiamondDeployer is Script, IDiamondCut {
         DiamondLoupeFacet(address(diamond)).facetAddresses();
 
         // Deploy mock tokens
-        usdc = new MockERC20("USD Coin", "USDC", 6, 1000);
-        weth = new MockERC20("Wrapped ETH", "WETH", 18, 1000);
-        wbtc = new MockERC20("Wrapped BTC", "WBTC", 8, 1000);
+        // usdc = new MockERC20("USD Coin", "USDC", 6, 1000);
+        // weth = new MockERC20("Wrapped ETH", "WETH", 18, 1000);
+        // wbtc = new MockERC20("Wrapped BTC", "WBTC", 8, 1000);
 
         // Deploy mock price feeds
         // usdcPriceFeed = new MockPriceFeed(USDC_PRICE, 8);
@@ -179,9 +179,12 @@ contract DiamondDeployer is Script, IDiamondCut {
 
         // Setup supported tokens and price feeds
         address[] memory tokens = new address[](4);
-        tokens[0] = address(usdc);
-        tokens[1] = address(weth);
-        tokens[2] = address(wbtc);
+        // tokens[0] = address(usdc);
+        // tokens[1] = address(weth);
+        // tokens[2] = address(wbtc);
+        tokens[0] = address(0x7DB192Afb86B887BA39B7f7d058d21534A88BD3C);
+        tokens[1] = address(0x9959f02663B7c7BA0ED578613136F15FD56C67E8);
+        tokens[2] = address(0xF9091C04901d2501EA170D266Bed70F04c65d32A);
         tokens[3] = Constants.NATIVE_TOKEN;
 
         address[] memory priceFeeds = new address[](4);
@@ -197,8 +200,6 @@ contract DiamondDeployer is Script, IDiamondCut {
         // Initialize diamond with tokens and price feeds
         diamond.initialize(tokens, priceFeeds, address(diamond));
 
-        P2pFacet(payable(diamond)).addCollateralTokens(tokens, priceFeeds);
-
         for (uint256 i = 0; i < tokens.length - 1; i++) {
             LendingPoolFacet(payable(diamond)).addSupportedToken(
                 tokens[i],
@@ -209,7 +210,7 @@ contract DiamondDeployer is Script, IDiamondCut {
             );
         }
         // Initialize reward distribution
-        // MockERC20 rewardToken = new MockERC20("Reward Token", "REWARD", 18);
+        // MockERC20 rewardToken = new MockERC20("Reward Token", "vREWARD", 18, 0);
 
         // RewardDistributionFacet(address(diamond)).initializeRewardDistribution(
         //     address(rewardToken) // TODO: change to reward token

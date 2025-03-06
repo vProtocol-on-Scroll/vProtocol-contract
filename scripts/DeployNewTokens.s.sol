@@ -39,7 +39,7 @@ contract TokenDeployer is Script {
     function setUp() public {}
 
     function run() public {
-        vm.createSelectFork("sepolia");
+        // vm.createSelectFork("sepolia");
         vm.startBroadcast();
 
         // Deploy mock tokens
@@ -77,7 +77,7 @@ contract TokenDeployer is Script {
         tokenToRemove[2] = 0x7123Dd26c754ea150Af6e8F79a47F35f96D9d8ef;
         tokenToRemove[3] = Constants.NATIVE_TOKEN;
 
-        p2pF.removeCollateralTokens(tokenToRemove);
+        // p2pF.removeCollateralTokens(tokenToRemove);
 
         p2pF.addCollateralTokens(tokens, priceFeeds);
 
