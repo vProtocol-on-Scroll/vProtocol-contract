@@ -8,14 +8,14 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @dev A mock ERC20 token for testing purposes
  */
 contract MockERC20 is ERC20 {
-    uint8 private _decimals;
+    uint8 private _dec;
     constructor(
         string memory name,
         string memory symbol,
         uint8 _decimals,
         uint256 initialSupply
     ) ERC20(name, symbol) {
-        _decimals = _decimals;
+        _dec = _decimals;
         _mint(msg.sender, initialSupply * 10 ** _decimals);
     }
 
@@ -28,6 +28,6 @@ contract MockERC20 is ERC20 {
     }
 
     function decimals() public view override returns (uint8) {
-        return _decimals;
+        return _dec;
     }
 }

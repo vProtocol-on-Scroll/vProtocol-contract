@@ -243,8 +243,8 @@ contract LendingPoolFacet {
             require(s.tokenData[borrowToken].poolLiquidity >= borrowAmount, "Insufficient liquidity");
             
             // Create a new loan
-            loanId = s.nextLoanId++;
-            
+            s.nextLoanId++;
+            loanId = s.nextLoanId;
             // Store the loan details
             PoolLoan storage loan = s.poolLoans[loanId];
             loan.borrower = msg.sender;
@@ -522,7 +522,7 @@ contract LendingPoolFacet {
     function repay(uint256 loanId, uint256 amount) external payable returns (uint256 repaid) {
         require(!s.isPaused, "Protocol is paused");
         require(!s.lendingPoolConfig.isPaused, "Pool is paused");
-        require(loanId < s.nextLoanId, "Invalid loan ID");
+        require(loanId <= s.nextLoanId, "Invalid loan ID");
         
         PoolLoan storage loan = s.poolLoans[loanId];
         require(loan.status == LoanStatus.ACTIVE, "Loan not active");
@@ -594,7 +594,7 @@ contract LendingPoolFacet {
     function liquidateLoan(uint256 loanId) external returns (uint256 liquidated) {
         require(!s.isPaused, "Protocol is paused");
         require(!s.lendingPoolConfig.isPaused, "Pool is paused");
-        require(loanId < s.nextLoanId, "Invalid loan ID");
+        require(loanId <= s.nextLoanId, "Invalid loan ID");
         
         PoolLoan storage loan = s.poolLoans[loanId];
         require(loan.status == LoanStatus.ACTIVE, "Loan not active");
@@ -722,7 +722,7 @@ contract LendingPoolFacet {
         uint256 currentDebt,
         uint256 healthFactor
     ) {
-        require(loanId < s.nextLoanId, "Invalid loan ID");
+        require(loanId <= s.nextLoanId, "Invalid loan ID");
         PoolLoan storage loan = s.poolLoans[loanId];
         loanDetails.borrower = loan.borrower;
         loanDetails.borrowToken = loan.borrowToken;
@@ -764,6 +764,11 @@ contract LendingPoolFacet {
             return 0;
         }
         return (tokenData.totalBorrows * 10000) / tokenData.totalDeposits;
+    }
+
+    // get user Token collateral
+    function getUserTokenCollateral(address user, address token) external view returns (uint256) {
+        return s.userPositions[user].collateral[token];
     }
 
     /**
@@ -863,6 +868,8 @@ contract LendingPoolFacet {
         // Exchange rate is the ratio of the total assets to the total deposits
         return (s.vaultDeposits[asset] * 1e18) / s.tokenData[asset].totalDeposits;
     }
+
+
     /**
      * @notice Deploy a new VToken vault for a supported token
      * @param token Token address
@@ -904,7 +911,7 @@ contract LendingPoolFacet {
      * @return Whether the loan can be liquidated
      */
     function _isLoanLiquidatable(uint256 loanId) internal view returns (bool) {
-        if (loanId >= s.nextLoanId) return false;
+        if (loanId > s.nextLoanId) return false;
         
         PoolLoan storage loan = s.poolLoans[loanId];
         if (loan.status != LoanStatus.ACTIVE) return false;
