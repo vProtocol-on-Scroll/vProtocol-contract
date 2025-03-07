@@ -310,7 +310,6 @@ contract LendingPoolFacetTest is Test {
         uint256 amountWithdrawn = LendingPoolFacet(payable(address(diamond))).withdraw(
             address(mockUSDC),
             500 * 10**18,
-            true, // from collateral
             false // not from vault
         );
         vm.stopPrank();

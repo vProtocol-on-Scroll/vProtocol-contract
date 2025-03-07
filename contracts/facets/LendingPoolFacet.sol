@@ -360,6 +360,8 @@ contract LendingPoolFacet {
         } else {
             s.userPositions[msg.sender].poolDeposits[token] += shares;
         }
+
+        IVTokenVault(s.vaults[token]).mintFor(msg.sender, shares);
         
         s.userPositions[msg.sender].lastUpdate = block.timestamp;
 
@@ -430,14 +432,12 @@ contract LendingPoolFacet {
      * @notice Withdraw tokens from the lending pool
      * @param token Token to withdraw
      * @param amount Amount to withdraw (0 for max)
-     * @param isCollateral Whether withdrawing from collateral
      * @param fromVault Whether to redeem vault tokens
      * @return withdrawn Amount withdrawn
      */
     function withdraw(
         address token, 
         uint256 amount,
-        bool isCollateral,
         bool fromVault
     ) external returns (uint256 withdrawn) {
         require(amount > 0, "Amount must be greater than 0");
@@ -472,26 +472,15 @@ contract LendingPoolFacet {
         } else {
             UserPosition storage position = s.userPositions[msg.sender];
 
-            if (isCollateral) {
-                // Withdraw from collateral
-                require(position.collateral[token] >= amount, "Insufficient collateral");
-                
-                // Check if removing collateral would affect health of any loans
-                bool safeToRemove = _checkCollateralRemovalSafety(msg.sender, token, amount);
-                require(safeToRemove, "Collateral needed for existing loans");
-                
-                // Update position
-                position.collateral[token] -= amount;
-                withdrawn = amount;
-            } else {
-                // Withdraw from deposits
-                uint256 shares = _calculatePoolShares(token, amount);
-                require(position.poolDeposits[token] >= shares, "Insufficient deposit balance");
-                
-                // Update position
-                position.poolDeposits[token] -= shares;
-                withdrawn = amount;
-            }
+            // Withdraw from deposits
+            uint256 shares = _calculatePoolShares(token, amount);
+            require(position.poolDeposits[token] >= shares, "Insufficient deposit balance");
+            
+            // Update position
+            position.poolDeposits[token] -= shares;
+            IVTokenVault(s.vaults[token]).burnFor(msg.sender, shares);
+            withdrawn = amount;
+            
             
             position.lastUpdate = block.timestamp;
 
@@ -805,6 +794,10 @@ contract LendingPoolFacet {
         if(asset == Constants.NATIVE_TOKEN) {
             IWeth(Constants.WETH).withdraw(amount);
         }
+
+        // Update user positions
+        uint256 shares = _calculatePoolShares(asset, amount);
+        s.userPositions[depositor].poolDeposits[asset] += shares;
         
         // Update vault deposits
         s.vaultDeposits[asset] += amount;
@@ -834,6 +827,13 @@ contract LendingPoolFacet {
         
         // Ensure sufficient liquidity
         require(s.tokenData[asset].poolLiquidity >= amount, "Insufficient liquidity");
+
+        // Ensure user has enough shares to withdraw
+        require(s.userPositions[receiver].poolDeposits[asset] >= amount, "Insufficient shares");
+
+        // Update user positions
+        uint256 shares = _calculatePoolShares(asset, amount);
+        s.userPositions[receiver].poolDeposits[asset] -= shares;
         
         // Update vault deposits
         s.vaultDeposits[asset] -= amount;
@@ -869,6 +869,23 @@ contract LendingPoolFacet {
         return (s.vaultDeposits[asset] * 1e18) / s.tokenData[asset].totalDeposits;
     }
 
+    function notifyVaultTransfer(address asset, uint256 amount, address sender, address receiver) external returns (bool) {
+        require(s.vaults[asset] == msg.sender, "Only vault can call");
+        require(s.tokenData[asset].poolLiquidity >= amount, "Insufficient liquidity");
+        require(sender != receiver, "Sender and receiver are the same");
+        require(sender != address(0) && receiver != address(0), "Invalid sender or receiver");
+
+        // Check if sender has enough shares to transfer and are not collateral
+        if(s.userPositions[sender].poolDeposits[asset] < amount) {
+            revert("Insufficient shares");
+        }
+
+        // Update user positions
+        s.userPositions[sender].poolDeposits[asset] -= amount;
+        s.userPositions[receiver].poolDeposits[asset] += amount;
+        
+        return true;
+    }
 
     /**
      * @notice Deploy a new VToken vault for a supported token
