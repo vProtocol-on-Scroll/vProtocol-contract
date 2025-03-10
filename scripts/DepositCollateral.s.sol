@@ -11,8 +11,8 @@ import "../contracts/facets/P2pFacet.sol";
 import {Constants} from "../contracts/utils/constants/Constant.sol";
 import {MockERC20} from "../contracts/mocks/MockERC20.sol";
 
-contract TokenDeployer is Script {
-    address DIAMOND_ADDRESS = 0x747605f4E4FB4823d8781b74fB6B0c36eB0A83a3;
+contract DepositCollateral is Script {
+    address DIAMOND_ADDRESS = 0x78A44F68765209efc9A1527b4e0c897f69D8b86e;
     //contract types of facets to be deployed
     Diamond diamond;
     DiamondCutFacet dCutFacet;
@@ -34,8 +34,6 @@ contract TokenDeployer is Script {
 
         p2pF = P2pFacet(payable(DIAMOND_ADDRESS));
         lendingPoolF = LendingPoolFacet(payable(DIAMOND_ADDRESS));
-
-        // lendingPoolF.initializeLendingPool(4000, 8000, 1000, 5000);
 
         for (uint8 i = 0; i < tokens.length; i++) {
             MockERC20 token = MockERC20(tokens[i]);

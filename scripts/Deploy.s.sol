@@ -60,7 +60,7 @@ contract DiamondDeployer is Script, IDiamondCut {
         vm.startBroadcast();
         //deploy facets
         dCutFacet = new DiamondCutFacet();
-        diamond = new Diamond(address(msg.sender), address(dCutFacet));
+        diamond = new Diamond(msg.sender, address(dCutFacet));
 
         //deploy diamond init
         diamondInit = new DiamondInit();
@@ -209,13 +209,21 @@ contract DiamondDeployer is Script, IDiamondCut {
                 true
             );
         }
+
+        LendingPoolFacet lpF = LendingPoolFacet(payable(diamond));
+        address one = lpF.deployVault(tokens[0], "Five USDC", "vUSDC");
+        address two = lpF.deployVault(tokens[1], "Five WETH", "vWETH");
+        address three = lpF.deployVault(tokens[2], "Five WBTC", "vWBTC");
         // Initialize reward distribution
         // MockERC20 rewardToken = new MockERC20("Reward Token", "vREWARD", 18, 0);
 
         // RewardDistributionFacet(address(diamond)).initializeRewardDistribution(
         //     address(rewardToken) // TODO: change to reward token
         // );
+        lpF.initializeLendingPool(2000, 8000, 1000, 3000);
+
         console.log("Diamond deployed at: ", address(diamond));
+        console.log("DiamondInit deployed at: ", address(diamondInit));
         console.log("DiamondCutFacet deployed at: ", address(dCutFacet));
         console.log("DiamondLoupeFacet deployed at: ", address(dLoupe));
         console.log("OwnershipFacet deployed at: ", address(ownerF));
