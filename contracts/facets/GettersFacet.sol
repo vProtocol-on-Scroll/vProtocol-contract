@@ -5,6 +5,7 @@ import {LibDiamond} from "../libraries/LibDiamond.sol";
 import {LibAppStorage} from "../libraries/LibAppStorage.sol";
 import {LibGettersImpl} from "../libraries/LibGetters.sol";
 import {Request} from "../model/Protocol.sol";
+import {TokenData} from "../model/Protocol.sol";
 
 /**
  * @title LendingPoolFacet
@@ -159,5 +160,116 @@ contract GettersFacet {
      */
     function getAllRequest() external view returns (Request[] memory) {
         return LibGettersImpl._getAllRequest(s);
+    }
+
+    /**
+     * @notice Get utilization rate for a token
+     * @param token Token address
+     * @return Utilization rate in basis points (0-10000)
+     */
+    function getUtilizationRate(address token) public view returns (uint256) {
+        TokenData storage tokenData = s.tokenData[token];
+        if (tokenData.totalDeposits == 0) {
+            return 0;
+        }
+        return (tokenData.totalBorrows * 10000) / tokenData.totalDeposits;
+    }
+
+    /**
+     * @notice Get total deposits for a token
+     * @param token Token address
+     * @return Total deposits in the token
+     */
+    function getTotalDeposits(address token) public view returns (uint256) {
+        return s.tokenData[token].totalDeposits;
+    }
+
+    /**
+     * @notice Get total borrows for a token
+     * @param token Token address
+     * @return Total borrows in the token
+     */
+    function getTotalBorrows(address token) public view returns (uint256) {
+        return s.tokenData[token].totalBorrows;
+    }
+
+    /**
+     * @notice Calculate borrow rate based on utilization
+     * @param utilization Utilization rate in basis points (0-10000)
+     * @return Borrow rate in basis points
+     */
+    function _calculateBorrowRate(
+        uint256 utilization
+    ) internal view returns (uint256) {
+        if (utilization <= s.lendingPoolConfig.optimalUtilization) {
+            return
+                s.lendingPoolConfig.baseRate +
+                (utilization * s.lendingPoolConfig.slopeRate) /
+                s.lendingPoolConfig.optimalUtilization;
+        } else {
+            uint256 excessUtilization = utilization -
+                s.lendingPoolConfig.optimalUtilization;
+            return
+                s.lendingPoolConfig.baseRate +
+                s.lendingPoolConfig.slopeRate +
+                (excessUtilization * s.lendingPoolConfig.slopeExcess) /
+                (10000 - s.lendingPoolConfig.optimalUtilization);
+        }
+    }
+
+    /**
+     * @notice Get borrow rate for a token
+     * @param token Token address
+     * @return Borrow rate in basis points
+     */
+    function getBorrowApr(address token) public view returns (uint256) {
+        uint256 utilization = getUtilizationRate(token);
+        return _calculateBorrowRate(utilization);
+    }
+
+    /**
+     * @notice Get supply APY for a token
+     * @param token Token address
+     * @return Supply APY in basis points (0-10000)
+     */
+    function getSupplyApy(address token) public view returns (uint256) {
+        uint256 supplyApy = (getBorrowApr(token) *
+            getUtilizationRate(token) *
+            (10000 - s.lendingPoolConfig.reserveFactor)) / 10000;
+        return supplyApy;
+    }
+
+    function getUserPosition(
+        address user,
+        address token
+    )
+        external
+        view
+        returns (
+            uint256 _poolDeposits,
+            uint256 _poolBorrows,
+            uint256 _p2pLentAmount,
+            uint256 _p2pBorrowedAmount,
+            uint256 _collateral,
+            uint256 _totalLoanCollectedUSD,
+            uint256 _lastUpdate
+        )
+    {
+        _poolDeposits = s.userPositions[user].poolDeposits[token];
+        _poolBorrows = s.userPositions[user].poolBorrows[token];
+        _p2pLentAmount = s.userPositions[user].p2pLentAmount[token];
+        _p2pBorrowedAmount = s.userPositions[user].p2pBorrowedAmount[token];
+        _collateral = s.userPositions[user].collateral[token];
+        _totalLoanCollectedUSD = s.userPositions[user].totalLoanCollectedUSD;
+        _lastUpdate = s.userPositions[user].lastUpdate;
+        return (
+            _poolDeposits,
+            _poolBorrows,
+            _p2pLentAmount,
+            _p2pBorrowedAmount,
+            _collateral,
+            _totalLoanCollectedUSD,
+            _lastUpdate
+        );
     }
 }

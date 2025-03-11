@@ -442,6 +442,10 @@ contract LendingPoolFacet {
     ) external returns (uint256 withdrawn) {
         require(amount > 0, "Amount must be greater than 0");
         require(!s.isPaused, "Protocol is paused");
+        require(!s.lendingPoolConfig.isPaused, "Pool is paused");           
+        
+        // Withdraw from deposits
+        uint256 shares = _calculatePoolShares(token, amount);
 
         // Update state with latest interest rates
         _updateState(token);
@@ -472,8 +476,6 @@ contract LendingPoolFacet {
         } else {
             UserPosition storage position = s.userPositions[msg.sender];
 
-            // Withdraw from deposits
-            uint256 shares = _calculatePoolShares(token, amount);
             require(position.poolDeposits[token] >= shares, "Insufficient deposit balance");
             
             // Update position
