@@ -880,6 +880,10 @@ contract P2pFacet {
         address[] memory collateralTokens,
         uint256 totalCollateralUSD
     ) internal {
+        require(
+            loanUsdValue * 10000 <= totalCollateralUSD * Constants.MAX_LTV,
+            "Insufficient collateral"
+        );
         UserPosition storage position = s.userPositions[msg.sender];
 
         // Calculate required collateral to lock based on loan value and LTV
@@ -1099,7 +1103,7 @@ contract P2pFacet {
             amount >= listing.min_amount && amount <= listing.max_amount,
             "Invalid amount"
         );
-        require(listing.expirationDate > block.timestamp, "Listing expired");
+        // require(listing.expirationDate > block.timestamp, "Listing expired");
         require(listing.author != msg.sender, "Cannot borrow from yourself");
 
         // Create a new loan request

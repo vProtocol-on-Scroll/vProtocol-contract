@@ -286,6 +286,59 @@ contract MVPFlow is Test, IDiamondCut {
         assertEq(uint8(reqAfter.status), uint8(Status.CLOSED));
     }
 
+    function testRequestLoanFromListingFailsWithoutEnoughCollateral() public {
+        P2pFacet p2p = P2pFacet(payable(diamond));
+        LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
+        _depositCollateral(user1);
+
+        weth.approve(address(diamond), 100e18);
+        p2p.createLoanListingWithMatching(
+            100e18,
+            1,
+            100e18,
+            block.timestamp + 100 days,
+            1000,
+            address(weth),
+            true
+        );
+
+        switchSigner(user2);
+
+        vm.expectRevert("No Active collateral");
+        p2p.requestLoanFromListing(1, 50e18);
+
+        weth.approve(address(diamond), 10e18);
+        lP.deposit(address(weth), 10e18, true);
+        vm.expectRevert("Insufficient collateral");
+        p2p.requestLoanFromListing(1, 9e18);
+    }
+
+    function testRequestLoanFromListingPassWithEnoughCollateral() public {
+        P2pFacet p2p = P2pFacet(payable(diamond));
+        LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
+        _depositCollateral(user1);
+
+        weth.approve(address(diamond), 100e18);
+        p2p.createLoanListingWithMatching(
+            100e18,
+            1,
+            100e18,
+            block.timestamp + 100 days,
+            1000,
+            address(weth),
+            true
+        );
+
+        switchSigner(user2);
+
+        weth.approve(address(diamond), 1000e18);
+        lP.deposit(address(weth), 1000e18, true);
+
+        vm.expectEmit(true, true, true, true);
+        emit Event.RequestServiced(1, user1, user2, 100e18);
+        p2p.requestLoanFromListing(1, 100e18);
+    }
+
     function _serviceRequest(address user, uint96 _id) internal {
         switchSigner(user);
         P2pFacet p2p = P2pFacet(payable(diamond));
