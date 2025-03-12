@@ -510,6 +510,19 @@ contract P2pFacet {
     }
 
     /**
+     * @notice Request a loan from a listing
+     * @param listingId Listing ID to borrow from
+     * @param amount Amount to borrow
+     * @return Whether the request was successful
+     */
+    function requestLoanFromListing(
+        uint96 listingId,
+        uint256 amount
+    ) external returns (bool) {
+        return _requestLoanFromListing(listingId, amount);
+    }
+
+    /**
      * @notice Repay a P2P loan
      * @param requestId ID of the loan request
      * @param amount Amount to repay (0 for full repayment)

@@ -12,7 +12,7 @@ import "../contracts/facets/GettersFacet.sol";
 import "../contracts/facets/P2pFacet.sol";
 import "../contracts/Diamond.sol";
 
-contract AddFacet is Script, IDiamondCut {
+contract RemoveFacet is Script, IDiamondCut {
     //contract types of facets to be deployed
     Diamond diamond;
     DiamondCutFacet dCutFacet;
@@ -30,6 +30,10 @@ contract AddFacet is Script, IDiamondCut {
     address constant DIAMOND_INIT_ADDRESS =
         0xE5c7e807b531db40735d7a1217b9F835D9644E79;
 
+    address constant GETTERS_ADDRESS =
+        0xe0948A1AD876B7DE68a9eaa72A9BeB2dCAa70e1E;
+    address constant P2P_ADDRESS = 0x9344dFC688cB168ce1cff4776433D57372296138;
+
     function setUp() public {}
 
     function run() public {
@@ -43,29 +47,19 @@ contract AddFacet is Script, IDiamondCut {
         //build cut struct
         FacetCut[] memory cut = new FacetCut[](2);
 
-        bytes4[] memory gFs = new bytes4[](5);
-        gFs[0] = 0x0251cfa1;
-        gFs[1] = 0xb87147df;
-        gFs[2] = 0x2a7c716c;
-        gFs[3] = 0x84b7249b;
-        gFs[4] = 0x92a576e6;
-
-        bytes4[] memory p2pFs = new bytes4[](1);
-        p2pFs[0] = 0x7ada5403;
-
         cut[0] = (
             FacetCut({
-                facetAddress: address(gettersF),
-                action: FacetCutAction.Add,
-                functionSelectors: gFs
+                facetAddress: address(0),
+                action: FacetCutAction.Remove,
+                functionSelectors: generateSelectors("GettersFacet")
             })
         );
 
         cut[1] = (
             FacetCut({
-                facetAddress: address(p2pF),
-                action: FacetCutAction.Add,
-                functionSelectors: p2pFs
+                facetAddress: address(0),
+                action: FacetCutAction.Remove,
+                functionSelectors: generateSelectors("P2pFacet")
             })
         );
 
@@ -78,9 +72,6 @@ contract AddFacet is Script, IDiamondCut {
             DIAMOND_INIT_ADDRESS,
             _calldata
         );
-
-        console.log("Getters Facet", address(gettersF));
-        console.log("P2p Facet", address(p2pF));
 
         vm.stopBroadcast();
     }
