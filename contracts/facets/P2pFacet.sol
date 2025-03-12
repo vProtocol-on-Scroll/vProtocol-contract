@@ -519,6 +519,15 @@ contract P2pFacet {
         uint96 listingId,
         uint256 amount
     ) external returns (bool) {
+        uint256 collateralCount = 0;
+        for (uint i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+            if (s.userPositions[msg.sender].collateral[token] > 0) {
+                collateralCount++;
+            }
+        }
+        require(collateralCount > 0, "No Active collateral");
+
         return _requestLoanFromListing(listingId, amount);
     }
 
@@ -1090,6 +1099,8 @@ contract P2pFacet {
             amount >= listing.min_amount && amount <= listing.max_amount,
             "Invalid amount"
         );
+        require(listing.expirationDate > block.timestamp, "Listing expired");
+        require(listing.author != msg.sender, "Cannot borrow from yourself");
 
         // Create a new loan request
         uint96 requestId = ++s.requestId;
