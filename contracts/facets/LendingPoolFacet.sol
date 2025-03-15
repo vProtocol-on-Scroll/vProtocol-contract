@@ -373,9 +373,14 @@ contract LendingPoolFacet {
             // Add loan to user's loans
             s.userPoolLoans[msg.sender].push(loanId);
 
+            s.userPositions[msg.sender].poolBorrows[
+                borrowToken
+            ] += borrowAmount;
+
             // Update token data
             s.tokenData[borrowToken].poolLiquidity -= borrowAmount;
             s.tokenData[borrowToken].totalBorrows += borrowAmount;
+            s.tokenData[borrowToken].lastUpdateTimestamp = block.timestamp;
 
             // Update user activity for rewards
             s.userActivities[msg.sender].totalBorrowingAmount += borrowValue;
@@ -674,6 +679,9 @@ contract LendingPoolFacet {
                     loan.collateralAmounts[collateralToken] = 0;
                 }
             }
+
+            s.userPositions[msg.sender].poolBorrows[loan.borrowToken] -= loan
+                .borrowAmount;
         } else {
             // Partial repayment - reduce principal
             uint256 interestPortion = repaid > accrued ? accrued : repaid;
