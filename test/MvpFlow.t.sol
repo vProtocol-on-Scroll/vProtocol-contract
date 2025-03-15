@@ -16,7 +16,7 @@ import {MockPriceFeed} from "../contracts/mocks/MockPriceFeed.sol";
 import {VTokenVault} from "../contracts/VTokenVault.sol";
 
 import {Event} from "../contracts/model/Event.sol";
-import {Request, Status} from "../contracts/model/Protocol.sol";
+import {PoolLoanDetails, Request, Status, LoanStatus} from "../contracts/model/Protocol.sol";
 
 contract MVPFlow is Test, IDiamondCut {
     //contract types of facets to be deployed
@@ -337,6 +337,81 @@ contract MVPFlow is Test, IDiamondCut {
         vm.expectEmit(true, true, true, true);
         emit Event.RequestServiced(1, user1, user2, 100e18);
         p2p.requestLoanFromListing(1, 100e18);
+    }
+
+    function testBorrowFromLendingPool() public {
+        _depositCollateral(user2);
+        _depositCollateral(user1);
+        // switchSigner(user1);
+        LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
+
+        // weth.approve(address(diamond), 1000e18);
+        // lP.deposit(address(weth), 1000e18, true);
+
+        address[] memory _tokens = new address[](0);
+        uint256[] memory _amounts = new uint256[](0);
+
+        lP.createPosition(_tokens, _amounts, address(weth), 100e18, true);
+
+        (
+            PoolLoanDetails memory loan,
+            uint256 currDebt,
+            uint256 healthFactor
+        ) = lP.getLoanDetails(1);
+        assertEq(loan.borrowAmount, 100e18);
+    }
+
+    function testPoolRepayLoan() public {
+        _depositCollateral(user2);
+        switchSigner(user1);
+        LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
+
+        weth.approve(address(diamond), 1000e18);
+        lP.deposit(address(weth), 1000e18, true);
+
+        address[] memory _tokens = new address[](0);
+        uint256[] memory _amounts = new uint256[](0);
+        uint256 collateralBefore = lP.getUserTokenCollateral(
+            user1,
+            address(weth)
+        );
+
+        lP.createPosition(_tokens, _amounts, address(weth), 100e18, true);
+
+        uint256 collateralAfterBorrow = lP.getUserTokenCollateral(
+            user1,
+            address(weth)
+        );
+
+        assertGt(
+            collateralBefore,
+            collateralAfterBorrow,
+            "Collateral not locked after borrowing"
+        );
+
+        (PoolLoanDetails memory loan, uint256 currDebt, ) = lP.getLoanDetails(
+            1
+        );
+
+        MockERC20 weth = MockERC20(address(loan.borrowToken));
+        weth.approve(address(diamond), currDebt);
+        lP.repay(1, currDebt);
+
+        (PoolLoanDetails memory loanAfter, uint256 currDebtAfter, ) = lP
+            .getLoanDetails(1);
+        uint256 collateralAfterRepay = lP.getUserTokenCollateral(
+            user1,
+            address(weth)
+        );
+
+        assertEq(
+            collateralAfterRepay,
+            collateralBefore,
+            "Collateral not unlocked after repayment"
+        );
+
+        assertEq(currDebtAfter, 0);
+        assertEq(uint8(loanAfter.status), uint8(LoanStatus.REPAID));
     }
 
     function _serviceRequest(address user, uint96 _id) internal {

@@ -8,7 +8,8 @@ import "../contracts/interfaces/IDiamondCut.sol";
 import "../contracts/facets/DiamondCutFacet.sol";
 import "../contracts/facets/DiamondLoupeFacet.sol";
 import "../contracts/facets/OwnershipFacet.sol";
-import "../contracts/facets/P2pFacet.sol";
+// import "../contracts/facets/P2pFacet.sol";
+import "../contracts/facets/LendingPoolFacet.sol";
 import "../contracts/Diamond.sol";
 
 contract ReplaceFacet is Script, IDiamondCut {
@@ -21,7 +22,8 @@ contract ReplaceFacet is Script, IDiamondCut {
     DiamondInit diamondInit;
 
     // faceted contracts
-    P2pFacet p2pF;
+    // P2pFacet p2pF;
+    LendingPoolFacet lendingPoolF;
 
     address constant DIAMOND_ADDRESS =
         0x78A44F68765209efc9A1527b4e0c897f69D8b86e;
@@ -39,16 +41,25 @@ contract ReplaceFacet is Script, IDiamondCut {
         //deploy facets
         diamond = Diamond(payable(DIAMOND_ADDRESS));
 
-        p2pF = new P2pFacet();
+        // p2pF = new P2pFacet();
+        lendingPoolF = new LendingPoolFacet();
 
         //build cut struct
         FacetCut[] memory cut = new FacetCut[](1);
 
+        // cut[0] = (
+        //     FacetCut({
+        //         facetAddress: address(p2pF),
+        //         action: FacetCutAction.Replace,
+        //         functionSelectors: generateSelectors("P2pFacet")
+        //     })
+        // );
+
         cut[0] = (
             FacetCut({
-                facetAddress: address(p2pF),
+                facetAddress: address(lendingPoolF),
                 action: FacetCutAction.Replace,
-                functionSelectors: generateSelectors("P2pFacet")
+                functionSelectors: generateSelectors("LendingPoolFacet")
             })
         );
 
