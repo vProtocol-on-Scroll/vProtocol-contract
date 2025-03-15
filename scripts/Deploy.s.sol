@@ -11,6 +11,7 @@ import "../contracts/facets/OwnershipFacet.sol";
 import "../contracts/facets/AutoRebalancingFacet.sol";
 import "../contracts/facets/LendingPoolFacet.sol";
 import "../contracts/facets/P2pFacet.sol";
+import "../contracts/facets/GettersFacet.sol";
 import "../contracts/facets/PauseableFacet.sol";
 import "../contracts/facets/RebalancingStrategyFacet.sol";
 import "../contracts/facets/RewardDistributionFacet.sol";
@@ -38,6 +39,7 @@ contract DiamondDeployer is Script, IDiamondCut {
     RebalancingStrategyFacet rebalancingStrategyF;
     RewardDistributionFacet rewardDistributionF;
     YieldOptimizationFacet yieldOptimizationF;
+    GettersFacet gettersF;
 
     // Mock tokens
     MockERC20 usdc;
@@ -76,11 +78,12 @@ contract DiamondDeployer is Script, IDiamondCut {
         rebalancingStrategyF = new RebalancingStrategyFacet();
         // rewardDistributionF = new RewardDistributionFacet();
         yieldOptimizationF = new YieldOptimizationFacet();
+        gettersF = new GettersFacet();
 
         //upgrade diamond with facets
 
         //build cut struct
-        FacetCut[] memory cut = new FacetCut[](8);
+        FacetCut[] memory cut = new FacetCut[](9);
 
         cut[0] = (
             FacetCut({
@@ -151,6 +154,14 @@ contract DiamondDeployer is Script, IDiamondCut {
                 facetAddress: address(yieldOptimizationF),
                 action: FacetCutAction.Add,
                 functionSelectors: generateSelectors("YieldOptimizationFacet")
+            })
+        );
+
+        cut[8] = (
+            FacetCut({
+                facetAddress: address(gettersF),
+                action: FacetCutAction.Add,
+                functionSelectors: generateSelectors("GettersFacet")
             })
         );
 
@@ -243,6 +254,7 @@ contract DiamondDeployer is Script, IDiamondCut {
             "YieldOptimizationFacet deployed at: ",
             address(yieldOptimizationF)
         );
+        console.log("GettersFacet deployed at: ", address(getterF));
 
         console.log("USDC deployed at: ", address(usdc));
         console.log("WETH deployed at: ", address(weth));

@@ -25,10 +25,15 @@ contract AddFacet is Script, IDiamondCut {
     GettersFacet gettersF;
     P2pFacet p2pF;
 
+    // address constant DIAMOND_ADDRESS =
+    //     0x78A44F68765209efc9A1527b4e0c897f69D8b86e;
+    // address constant DIAMOND_INIT_ADDRESS =
+    //     0xE5c7e807b531db40735d7a1217b9F835D9644E79;
+
     address constant DIAMOND_ADDRESS =
-        0x78A44F68765209efc9A1527b4e0c897f69D8b86e;
+        0x3cf9441a4EdbB04E27cb5Ea0b55b5AE0B6B0ACD5;
     address constant DIAMOND_INIT_ADDRESS =
-        0xE5c7e807b531db40735d7a1217b9F835D9644E79;
+        0x14063E2a3dd5924C922Ca31CE174c3ba41965e30;
 
     function setUp() public {}
 
@@ -41,33 +46,34 @@ contract AddFacet is Script, IDiamondCut {
         p2pF = new P2pFacet();
 
         //build cut struct
-        FacetCut[] memory cut = new FacetCut[](2);
+        FacetCut[] memory cut = new FacetCut[](1);
 
-        bytes4[] memory gFs = new bytes4[](5);
-        gFs[0] = 0x0251cfa1;
-        gFs[1] = 0xb87147df;
-        gFs[2] = 0x2a7c716c;
-        gFs[3] = 0x84b7249b;
-        gFs[4] = 0x92a576e6;
+        // bytes4[] memory gFs = new bytes4[](5);
+        // gFs[0] = 0x0251cfa1;
+        // gFs[1] = 0xb87147df;
+        // gFs[2] = 0x2a7c716c;
+        // gFs[3] = 0x84b7249b;
+        // gFs[4] = 0x92a576e6;
 
-        bytes4[] memory p2pFs = new bytes4[](1);
-        p2pFs[0] = 0x7ada5403;
+        // bytes4[] memory p2pFs = new bytes4[](1);
+        // p2pFs[0] = 0x7ada5403;
 
         cut[0] = (
             FacetCut({
                 facetAddress: address(gettersF),
                 action: FacetCutAction.Add,
-                functionSelectors: gFs
+                // functionSelectors: gFs
+                functionSelectors: generateSelectors("GettersFacet")
             })
         );
 
-        cut[1] = (
-            FacetCut({
-                facetAddress: address(p2pF),
-                action: FacetCutAction.Add,
-                functionSelectors: p2pFs
-            })
-        );
+        // cut[1] = (
+        //     FacetCut({
+        //         facetAddress: address(p2pF),
+        //         action: FacetCutAction.Add,
+        //         functionSelectors: p2pFs
+        //     })
+        // );
 
         bytes memory _calldata = abi.encodeWithSelector(
             DiamondInit.init.selector
@@ -80,7 +86,7 @@ contract AddFacet is Script, IDiamondCut {
         );
 
         console.log("Getters Facet", address(gettersF));
-        console.log("P2p Facet", address(p2pF));
+        // console.log("P2p Facet", address(p2pF));
 
         vm.stopBroadcast();
     }

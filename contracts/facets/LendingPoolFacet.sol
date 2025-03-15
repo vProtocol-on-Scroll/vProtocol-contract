@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {LibDiamond} from "../libraries/LibDiamond.sol";
 import {LibAppStorage} from "../libraries/LibAppStorage.sol";
-import {LibToken} from "../libraries/LibShared.sol";
+import {LibToken, LibFinance} from "../libraries/LibShared.sol";
 import {LibPriceOracle} from "../libraries/LibShared.sol";
 import {IVTokenVault} from "../interfaces/IVTokenVault.sol";
 import {VTokenVault} from "../VTokenVault.sol";
@@ -246,7 +246,7 @@ contract LendingPoolFacet {
 
             // Get current interest rate
             _updateState(borrowToken);
-            uint256 utilization = getUtilizationRate(borrowToken);
+            uint256 utilization = LibFinance.getUtilizationRate(s, borrowToken);
             uint256 borrowRate = _calculateBorrowRate(utilization);
 
             // Check borrowing capacity based on collateral value
@@ -891,38 +891,6 @@ contract LendingPoolFacet {
     }
 
     /**
-     * @notice Get all active loans for a user
-     * @param user User address
-     * @return loanIds Array of loan IDs
-     */
-    function getUserLoans(
-        address user
-    ) external view returns (uint256[] memory loanIds) {
-        return s.userPoolLoans[user];
-    }
-
-    /**
-     * @notice Get utilization rate for a token
-     * @param token Token address
-     * @return Utilization rate in basis points (0-10000)
-     */
-    function getUtilizationRate(address token) public view returns (uint256) {
-        TokenData storage tokenData = s.tokenData[token];
-        if (tokenData.totalDeposits == 0) {
-            return 0;
-        }
-        return (tokenData.totalBorrows * 10000) / tokenData.totalDeposits;
-    }
-
-    // get user Token collateral
-    function getUserTokenCollateral(
-        address user,
-        address token
-    ) external view returns (uint256) {
-        return s.userPositions[user].collateral[token];
-    }
-
-    /**
      * @notice Set emergency pause state
      * @param paused Whether to pause or unpause the pool
      */
@@ -1016,30 +984,6 @@ contract LendingPoolFacet {
         }
 
         emit Event.VaultWithdrawn(asset, receiver, amount);
-    }
-
-    /**
-     * @notice Get vault's total assets
-     * @param asset Token address
-     * @return Total assets for the vault
-     */
-    function getVaultTotalAssets(
-        address asset
-    ) external view returns (uint256) {
-        return s.vaultDeposits[asset];
-    }
-
-    /**
-     * @notice Get vault's exchange rate
-     * @param asset Token address
-     * @return Exchange rate for the vault
-     */
-    function getVaultExchangeRate(
-        address asset
-    ) external view returns (uint256) {
-        // Exchange rate is the ratio of the total assets to the total deposits
-        return
-            (s.vaultDeposits[asset] * 1e18) / s.tokenData[asset].totalDeposits;
     }
 
     function notifyVaultTransfer(
@@ -1284,7 +1228,7 @@ contract LendingPoolFacet {
         }
 
         // Calculate utilization rate
-        uint256 utilization = getUtilizationRate(token);
+        uint256 utilization = LibFinance.getUtilizationRate(s, token);
 
         // Calculate interest rates
         uint256 borrowRate = _calculateBorrowRate(utilization);

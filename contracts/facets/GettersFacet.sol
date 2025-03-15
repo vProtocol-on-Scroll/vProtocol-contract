@@ -167,7 +167,7 @@ contract GettersFacet {
      * @param token Token address
      * @return Utilization rate in basis points (0-10000)
      */
-    function getUtilizationRate(address token) public view returns (uint256) {
+    function _getUtilizationRate(address token) public view returns (uint256) {
         TokenData storage tokenData = s.tokenData[token];
         if (tokenData.totalDeposits == 0) {
             return 0;
@@ -223,7 +223,7 @@ contract GettersFacet {
      * @return Borrow rate in basis points
      */
     function getBorrowApr(address token) public view returns (uint256) {
-        uint256 utilization = getUtilizationRate(token);
+        uint256 utilization = _getUtilizationRate(token);
         return _calculateBorrowRate(utilization);
     }
 
@@ -234,7 +234,7 @@ contract GettersFacet {
      */
     function getSupplyApy(address token) public view returns (uint256) {
         uint256 supplyApy = (getBorrowApr(token) *
-            getUtilizationRate(token) *
+            _getUtilizationRate(token) *
             (10000 - s.lendingPoolConfig.reserveFactor)) / 10000;
         return supplyApy;
     }
@@ -271,5 +271,48 @@ contract GettersFacet {
             _totalLoanCollectedUSD,
             _lastUpdate
         );
+    }
+
+    /**
+     * @notice Get all active loans for a user
+     * @param user User address
+     * @return loanIds Array of loan IDs
+     */
+    function getUserLoans(
+        address user
+    ) external view returns (uint256[] memory loanIds) {
+        return s.userPoolLoans[user];
+    }
+
+    // get user Token collateral
+    function getUserTokenCollateral(
+        address user,
+        address token
+    ) external view returns (uint256) {
+        return s.userPositions[user].collateral[token];
+    }
+
+    /**
+     * @notice Get vault's total assets
+     * @param asset Token address
+     * @return Total assets for the vault
+     */
+    function getVaultTotalAssets(
+        address asset
+    ) external view returns (uint256) {
+        return s.vaultDeposits[asset];
+    }
+
+    /**
+     * @notice Get vault's exchange rate
+     * @param asset Token address
+     * @return Exchange rate for the vault
+     */
+    function getVaultExchangeRate(
+        address asset
+    ) external view returns (uint256) {
+        // Exchange rate is the ratio of the total assets to the total deposits
+        return
+            (s.vaultDeposits[asset] * 1e18) / s.tokenData[asset].totalDeposits;
     }
 }

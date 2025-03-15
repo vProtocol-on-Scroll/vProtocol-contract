@@ -11,6 +11,7 @@ import "../contracts/Diamond.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {LendingPoolFacet} from "../contracts/facets/LendingPoolFacet.sol";
 import {P2pFacet} from "../contracts/facets/P2pFacet.sol";
+import {GettersFacet} from "../contracts/facets/GettersFacet.sol";
 import {MockERC20} from "../contracts/mocks/MockERC20.sol";
 import {MockPriceFeed} from "../contracts/mocks/MockPriceFeed.sol";
 import {VTokenVault} from "../contracts/VTokenVault.sol";
@@ -27,6 +28,7 @@ contract MVPFlow is Test, IDiamondCut {
 
     LendingPoolFacet lendingPoolF;
     P2pFacet p2pF;
+    GettersFacet gettersF;
 
     // Mock tokens
     MockERC20 usdc;
@@ -71,12 +73,13 @@ contract MVPFlow is Test, IDiamondCut {
 
         lendingPoolF = new LendingPoolFacet();
         p2pF = new P2pFacet();
+        gettersF = new GettersFacet();
         protocolToken = new MockERC20("Protocol Token", "PT", 18, 1000e18);
 
         //upgrade diamond with facets
 
         //build cut struct
-        FacetCut[] memory cut = new FacetCut[](4);
+        FacetCut[] memory cut = new FacetCut[](5);
 
         cut[0] = (
             FacetCut({
@@ -107,6 +110,14 @@ contract MVPFlow is Test, IDiamondCut {
                 facetAddress: address(p2pF),
                 action: FacetCutAction.Add,
                 functionSelectors: generateSelectors("P2pFacet")
+            })
+        );
+
+        cut[4] = (
+            FacetCut({
+                facetAddress: address(gettersF),
+                action: FacetCutAction.Add,
+                functionSelectors: generateSelectors("GettersFacet")
             })
         );
 
@@ -353,11 +364,7 @@ contract MVPFlow is Test, IDiamondCut {
 
         lP.createPosition(_tokens, _amounts, address(weth), 100e18, true);
 
-        (
-            PoolLoanDetails memory loan,
-            uint256 currDebt,
-            uint256 healthFactor
-        ) = lP.getLoanDetails(1);
+        (PoolLoanDetails memory loan, , ) = lP.getLoanDetails(1);
         assertEq(loan.borrowAmount, 100e18);
     }
 
@@ -365,20 +372,21 @@ contract MVPFlow is Test, IDiamondCut {
         _depositCollateral(user2);
         switchSigner(user1);
         LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
+        GettersFacet gF = GettersFacet(payable(diamond));
 
         weth.approve(address(diamond), 1000e18);
         lP.deposit(address(weth), 1000e18, true);
 
         address[] memory _tokens = new address[](0);
         uint256[] memory _amounts = new uint256[](0);
-        uint256 collateralBefore = lP.getUserTokenCollateral(
+        uint256 collateralBefore = gF.getUserTokenCollateral(
             user1,
             address(weth)
         );
 
         lP.createPosition(_tokens, _amounts, address(weth), 100e18, true);
 
-        uint256 collateralAfterBorrow = lP.getUserTokenCollateral(
+        uint256 collateralAfterBorrow = gF.getUserTokenCollateral(
             user1,
             address(weth)
         );
@@ -393,13 +401,13 @@ contract MVPFlow is Test, IDiamondCut {
             1
         );
 
-        MockERC20 weth = MockERC20(address(loan.borrowToken));
-        weth.approve(address(diamond), currDebt);
+        MockERC20 _weth = MockERC20(address(loan.borrowToken));
+        _weth.approve(address(diamond), currDebt);
         lP.repay(1, currDebt);
 
         (PoolLoanDetails memory loanAfter, uint256 currDebtAfter, ) = lP
             .getLoanDetails(1);
-        uint256 collateralAfterRepay = lP.getUserTokenCollateral(
+        uint256 collateralAfterRepay = gF.getUserTokenCollateral(
             user1,
             address(weth)
         );
@@ -412,6 +420,37 @@ contract MVPFlow is Test, IDiamondCut {
 
         assertEq(currDebtAfter, 0);
         assertEq(uint8(loanAfter.status), uint8(LoanStatus.REPAID));
+    }
+
+    function testGetAllPoolLoan() public {
+        _supplyToPool(user2);
+        switchSigner(user1);
+        LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
+        GettersFacet gF = GettersFacet(address(diamond));
+        wbtc.approve(address(diamond), 100e8);
+        lP.deposit(address(wbtc), 100e8, true);
+        address[] memory _tokens = new address[](0);
+        uint256[] memory _amounts = new uint256[](0);
+
+        lP.createPosition(_tokens, _amounts, address(usdc), 1000e6, true);
+        lP.createPosition(_tokens, _amounts, address(usdc), 1000e6, true);
+        lP.createPosition(_tokens, _amounts, address(usdc), 1000e6, true);
+
+        uint256[] memory loans = gF.getUserLoans(user1);
+        assertEq(loans.length, 3);
+
+        (
+            uint256 _poolDeposits,
+            uint256 _poolBorrows,
+            uint256 _p2pLentAmount,
+            uint256 _p2pBorrowedAmount,
+            uint256 _collateral,
+            uint256 _totalLoanCollectedUSD,
+            uint256 _lastUpdate
+        ) = GettersFacet(address(diamond)).getUserPosition(
+                user1,
+                address(usdc)
+            );
     }
 
     function _serviceRequest(address user, uint96 _id) internal {
@@ -431,6 +470,18 @@ contract MVPFlow is Test, IDiamondCut {
             uint256 amount = token.balanceOf(user);
             token.approve(address(diamond), amount / 2);
             pool.deposit(tokens[i], amount / 2, true);
+        }
+    }
+
+    function _supplyToPool(address user) internal {
+        switchSigner(user);
+        LendingPoolFacet pool = LendingPoolFacet(payable(diamond));
+
+        for (uint8 i = 0; i < tokens.length; i++) {
+            MockERC20 token = MockERC20(tokens[i]);
+            uint256 amount = token.balanceOf(user);
+            token.approve(address(diamond), amount / 2);
+            pool.deposit(tokens[i], amount / 2, false);
         }
     }
 

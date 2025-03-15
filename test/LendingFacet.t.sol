@@ -9,6 +9,7 @@ import "../contracts/facets/DiamondCutFacet.sol";
 import "../contracts/facets/DiamondLoupeFacet.sol";
 import "../contracts/facets/OwnershipFacet.sol";
 import "../contracts/facets/LendingPoolFacet.sol";
+import "../contracts/facets/GettersFacet.sol";
 import "../contracts/interfaces/IDiamondCut.sol";
 import "../contracts/model/Protocol.sol";
 import "../contracts/libraries/LibAppStorage.sol";
@@ -25,6 +26,7 @@ contract LendingPoolFacetTest is Test {
     DiamondLoupeFacet diamondLoupeFacet;
     OwnershipFacet ownershipFacet;
     LendingPoolFacet lendingPoolFacet;
+    GettersFacet gettersFacet;
     DiamondInit diamondInit;
 
     // Mock contracts
@@ -61,7 +63,7 @@ contract LendingPoolFacetTest is Test {
         diamond = new Diamond(owner, address(diamondCutFacet));
 
         // Build diamond cut for facets
-        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](3);
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](4);
 
         // Add DiamondLoupeFacet
         diamondLoupeFacet = new DiamondLoupeFacet();
@@ -85,6 +87,14 @@ contract LendingPoolFacetTest is Test {
             facetAddress: address(lendingPoolFacet),
             action: IDiamondCut.FacetCutAction.Add,
             functionSelectors: generateSelectors("LendingPoolFacet")
+        });
+
+        // Add GettersFacet
+        gettersFacet = new GettersFacet();
+        cuts[3] = IDiamondCut.FacetCut({
+            facetAddress: address(gettersFacet),
+            action: IDiamondCut.FacetCutAction.Add,
+            functionSelectors: generateSelectors("GettersFacet")
         });
 
         // Initialize diamond
@@ -171,7 +181,7 @@ contract LendingPoolFacetTest is Test {
 
         // Get user position
         // vm.startPrank(user1);
-        uint256 collateral = LendingPoolFacet(payable(address(diamond)))
+        uint256 collateral = GettersFacet(payable(address(diamond)))
             .getUserTokenCollateral(user1, address(mockUSDC));
         // vm.stopPrank();
 
@@ -394,7 +404,7 @@ contract LendingPoolFacetTest is Test {
 
         // Check user position after withdrawal
         vm.startPrank(user1);
-        uint256 collateral = LendingPoolFacet(payable(address(diamond)))
+        uint256 collateral = GettersFacet(payable(address(diamond)))
             .getUserTokenCollateral(user1, address(mockUSDC));
         vm.stopPrank();
 
