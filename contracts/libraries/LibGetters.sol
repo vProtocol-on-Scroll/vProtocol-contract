@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {LibAppStorage} from "./LibAppStorage.sol";
+import {LibToken, LibPriceOracle} from "./LibShared.sol";
 import {Constants} from "../utils/constants/Constant.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../model/Protocol.sol";
@@ -179,6 +180,176 @@ library LibGettersImpl {
         return
             (collateralAdjustedForThreshold * Constants.PRECISION) /
             (totalBorrowInUsd + newBorrowValue);
+    }
+
+    function _getP2pHealthFactor(
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 p2pHealthFactor) {
+        Request[] memory requests = _getUserActiveRequests(s, user);
+        for (uint256 i = 0; i < requests.length; i++) {
+            p2pHealthFactor += _calculatePositionHealthFactor(
+                s,
+                requests[i].requestId
+            );
+        }
+        return p2pHealthFactor / requests.length;
+    }
+
+    function _getPoolHealthFactor(
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 poolHealthFactor) {
+        uint256[] memory loanIds = s.userPoolLoans[user];
+
+        for (uint256 i = 0; i < loanIds.length; i++) {
+            if (s.poolLoans[loanIds[i]].status == LoanStatus.ACTIVE) {
+                poolHealthFactor += _calculateLoanHealthFactor(
+                    s,
+                    s.poolLoans[loanIds[i]]
+                );
+            }
+        }
+        return poolHealthFactor / loanIds.length;
+    }
+
+    /**
+     * @notice Calculate health factor for a specific position
+     * @param requestId Request ID
+     * @return Health factor in basis points
+     */
+    function _calculatePositionHealthFactor(
+        LibAppStorage.Layout storage s,
+        uint96 requestId
+    ) internal view returns (uint256) {
+        Request storage request = s.requests[requestId];
+
+        // Get loan value
+        uint8 loanDecimal = LibToken.getDecimals(request.loanRequestAddr);
+        uint256 loanUsdValue = LibPriceOracle.getTokenUsdValue(
+            s,
+            request.loanRequestAddr,
+            request.totalRepayment,
+            loanDecimal
+        );
+
+        // Calculate collateral value
+        uint256 totalCollateralValue = 0;
+        uint256 weightedLiquidationThreshold = 0;
+
+        for (uint i = 0; i < request.collateralTokens.length; i++) {
+            address token = request.collateralTokens[i];
+            uint256 collateralAmount = s.s_idToCollateralTokenAmount[requestId][
+                token
+            ];
+
+            if (collateralAmount > 0) {
+                uint8 decimal = LibToken.getDecimals(token);
+                uint256 tokenValue = LibPriceOracle.getTokenUsdValue(
+                    s,
+                    token,
+                    collateralAmount,
+                    decimal
+                );
+
+                totalCollateralValue += tokenValue;
+                weightedLiquidationThreshold +=
+                    tokenValue *
+                    s.tokenConfigs[token].liquidationThreshold;
+            }
+        }
+
+        if (loanUsdValue == 0) {
+            return type(uint256).max;
+        }
+
+        if (totalCollateralValue == 0) {
+            return 0;
+        }
+
+        // Calculate weighted liquidation threshold
+        uint256 avgLiquidationThreshold = weightedLiquidationThreshold /
+            totalCollateralValue;
+
+        // Calculate health factor
+        uint256 adjustedCollateralValue = (totalCollateralValue *
+            avgLiquidationThreshold) / 10000;
+        return (adjustedCollateralValue * 10000) / loanUsdValue;
+    }
+
+    /**
+     * @notice Calculate health factor for a specific loan
+     * @param loan Loan to calculate for
+     * @return Health factor (scaled by 10000)
+     */
+    function _calculateLoanHealthFactor(
+        LibAppStorage.Layout storage s,
+        PoolLoan storage loan
+    ) internal view returns (uint256) {
+        // Calculate current debt with interest
+        uint256 accrued = _calculateAccruedInterest(loan);
+        uint256 totalDebt = loan.borrowAmount + accrued;
+
+        // Calculate debt value
+        uint8 debtDecimals = LibToken.getDecimals(loan.borrowToken);
+        uint256 debtValue = LibPriceOracle.getTokenUsdValue(
+            s,
+            loan.borrowToken,
+            totalDebt,
+            debtDecimals
+        );
+
+        if (debtValue == 0) {
+            return type(uint256).max;
+        }
+
+        // Calculate total collateral value with liquidation thresholds
+        uint256 adjustedCollateralValue = 0;
+
+        for (uint i = 0; i < loan.collaterals.length; i++) {
+            address token = loan.collaterals[i];
+            uint256 amount = loan.collateralAmounts[token];
+
+            if (amount > 0) {
+                uint8 decimal = LibToken.getDecimals(token);
+                uint256 value = LibPriceOracle.getTokenUsdValue(
+                    s,
+                    token,
+                    amount,
+                    decimal
+                );
+
+                // Apply liquidation threshold
+                uint256 liquidationThreshold = s
+                    .tokenConfigs[token]
+                    .liquidationThreshold;
+                adjustedCollateralValue +=
+                    (value * liquidationThreshold) /
+                    10000;
+            }
+        }
+
+        // Calculate health factor
+        return (adjustedCollateralValue * 10000) / debtValue;
+    }
+
+    /**
+     * @notice Calculate accrued interest for a loan
+     * @param loan Loan to calculate for
+     * @return Accrued interest
+     */
+    function _calculateAccruedInterest(
+        PoolLoan storage loan
+    ) internal view returns (uint256) {
+        if (loan.borrowAmount == 0) return 0;
+
+        uint256 timeElapsed = block.timestamp - loan.lastInterestUpdate;
+        if (timeElapsed == 0) return 0;
+
+        // Calculate interest: principal * rate * time
+        return
+            (loan.borrowAmount * loan.interestRate * timeElapsed) /
+            (10000 * Constants.SECONDS_PER_YEAR);
     }
 
     /**

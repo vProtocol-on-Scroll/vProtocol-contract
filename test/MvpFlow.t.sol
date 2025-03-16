@@ -374,22 +374,24 @@ contract MVPFlow is Test, IDiamondCut {
         LendingPoolFacet lP = LendingPoolFacet(payable(diamond));
         GettersFacet gF = GettersFacet(payable(diamond));
 
-        weth.approve(address(diamond), 1000e18);
-        lP.deposit(address(weth), 1000e18, true);
+        usdc.approve(address(diamond), 2000e6);
+        lP.deposit(address(usdc), 2000e6, true);
 
         address[] memory _tokens = new address[](0);
         uint256[] memory _amounts = new uint256[](0);
         uint256 collateralBefore = gF.getUserTokenCollateral(
             user1,
-            address(weth)
+            address(usdc)
         );
+        console.log("collateralBefore", collateralBefore);
 
-        lP.createPosition(_tokens, _amounts, address(weth), 100e18, true);
+        lP.createPosition(_tokens, _amounts, address(weth), 0.3 ether, true);
 
         uint256 collateralAfterBorrow = gF.getUserTokenCollateral(
             user1,
-            address(weth)
+            address(usdc)
         );
+        console.log("collateralAfterBorrow", collateralAfterBorrow);
 
         assertGt(
             collateralBefore,
@@ -407,9 +409,10 @@ contract MVPFlow is Test, IDiamondCut {
 
         (PoolLoanDetails memory loanAfter, uint256 currDebtAfter, ) = lP
             .getLoanDetails(1);
+
         uint256 collateralAfterRepay = gF.getUserTokenCollateral(
             user1,
-            address(weth)
+            address(usdc)
         );
 
         assertEq(

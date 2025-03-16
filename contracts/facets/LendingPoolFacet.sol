@@ -214,7 +214,8 @@ contract LendingPoolFacet {
                         .userPositions[msg.sender]
                         .collateral[token];
                     uint8 decimal = LibToken.getDecimals(token);
-                    uint256 value = s.getTokenUsdValue(
+                    uint256 value = LibPriceOracle.getTokenUsdValue(
+                        s,
                         token,
                         existingAmount,
                         decimal
@@ -264,12 +265,15 @@ contract LendingPoolFacet {
             if (useExistingCollateral) {
                 for (uint i = 0; i < s.s_supportedTokens.length; i++) {
                     address token = s.s_supportedTokens[i];
+
                     uint256 existingAmount = s
                         .userPositions[msg.sender]
                         .collateral[token];
+
                     if (existingAmount > 0) {
                         uint8 decimal = LibToken.getDecimals(token);
-                        uint256 value = s.getTokenUsdValue(
+                        uint256 value = LibPriceOracle.getTokenUsdValue(
+                            s,
                             token,
                             existingAmount,
                             decimal
@@ -282,7 +286,8 @@ contract LendingPoolFacet {
 
             // Calculate borrow value
             uint8 borrowDecimals = LibToken.getDecimals(borrowToken);
-            uint256 borrowValue = s.getTokenUsdValue(
+            uint256 borrowValue = LibPriceOracle.getTokenUsdValue(
+                s,
                 borrowToken,
                 borrowAmount,
                 borrowDecimals
@@ -328,9 +333,10 @@ contract LendingPoolFacet {
             // // If using existing collateral, allocate some to this loan
             if (useExistingCollateral && loan.collaterals.length == 0) {
                 uint256 ltv = s.tokenConfigs[loan.borrowToken].ltv;
-                uint256 requiredCollateralUSD = (loan.borrowAmount * 10000) /
-                    ltv;
+                uint256 requiredCollateralUSD = (borrowValue * 10000) / ltv;
+
                 UserPosition storage position = s.userPositions[msg.sender];
+
                 for (uint i = 0; i < s.s_supportedTokens.length; i++) {
                     address token = s.s_supportedTokens[i];
                     uint8 decimal = LibToken.getDecimals(token);
@@ -676,7 +682,6 @@ contract LendingPoolFacet {
                     s.userPositions[loan.borrower].collateral[
                         collateralToken
                     ] += collateralAmount;
-                    loan.collateralAmounts[collateralToken] = 0;
                 }
             }
 

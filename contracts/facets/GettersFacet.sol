@@ -85,12 +85,14 @@ contract GettersFacet {
 
     /**
      * @dev Calculates user's health factor
+     * @notice The health factor is calculated as the ratio of the user's collateral value to the user's borrow value in both P2P and pool lending by averaging the total of the health factor of the two lending types
+     * @param user The address of the user to calculate the health factor for
+     * @return The user's health factor
      */
-    function healthFactor(
-        address user,
-        uint256 newBorrowValue
-    ) external view returns (uint256) {
-        return LibGettersImpl._healthFactor(s, user, newBorrowValue);
+    function healthFactor(address user) external view returns (uint256) {
+        uint256 p2pHealthFactor = LibGettersImpl._getP2pHealthFactor(s, user);
+        uint256 poolHealthFactor = LibGettersImpl._getPoolHealthFactor(s, user);
+        return (p2pHealthFactor + poolHealthFactor) / 2;
     }
 
     /**
