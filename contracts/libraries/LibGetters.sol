@@ -193,6 +193,7 @@ library LibGettersImpl {
                 requests[i].requestId
             );
         }
+        if (requests.length == 0) return 0;
         return p2pHealthFactor / requests.length;
     }
 
@@ -210,6 +211,7 @@ library LibGettersImpl {
                 );
             }
         }
+        if (loanIds.length == 0) return 0;
         return poolHealthFactor / loanIds.length;
     }
 

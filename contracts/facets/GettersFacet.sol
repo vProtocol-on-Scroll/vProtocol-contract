@@ -92,6 +92,15 @@ contract GettersFacet {
     function healthFactor(address user) external view returns (uint256) {
         uint256 p2pHealthFactor = LibGettersImpl._getP2pHealthFactor(s, user);
         uint256 poolHealthFactor = LibGettersImpl._getPoolHealthFactor(s, user);
+        if (p2pHealthFactor == 0 && poolHealthFactor == 0) {
+            return type(uint256).max;
+        }
+        if (p2pHealthFactor == 0) {
+            return poolHealthFactor;
+        }
+        if (poolHealthFactor == 0) {
+            return p2pHealthFactor;
+        }
         return (p2pHealthFactor + poolHealthFactor) / 2;
     }
 
