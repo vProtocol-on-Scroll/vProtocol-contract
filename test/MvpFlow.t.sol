@@ -383,15 +383,18 @@ contract MVPFlow is Test, IDiamondCut {
             user1,
             address(usdc)
         );
+        uint256 healthFactorBefore = gF.healthFactor(user1);
         console.log("collateralBefore", collateralBefore);
-
+        console.log("healthFactorBefore", healthFactorBefore);
         lP.createPosition(_tokens, _amounts, address(weth), 0.3 ether, true);
 
         uint256 collateralAfterBorrow = gF.getUserTokenCollateral(
             user1,
             address(usdc)
         );
+        uint256 healthFactorAfterBorrow = gF.healthFactor(user1);
         console.log("collateralAfterBorrow", collateralAfterBorrow);
+        console.log("healthFactorAfterBorrow", healthFactorAfterBorrow);
 
         assertGt(
             collateralBefore,
@@ -414,6 +417,9 @@ contract MVPFlow is Test, IDiamondCut {
             user1,
             address(usdc)
         );
+        uint256 healthFactorAfterRepay = gF.healthFactor(user1);
+        console.log("collateralAfterRepay", collateralAfterRepay);
+        console.log("healthFactorAfterRepay", healthFactorAfterRepay);
 
         assertEq(
             collateralAfterRepay,
