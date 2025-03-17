@@ -1,326 +1,481 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.9;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
 
-import "../contracts/interfaces/IDiamondCut.sol";
+import "forge-std/Test.sol";
+import "forge-std/console.sol";
+import "../contracts/Diamond.sol";
+import "../contracts/upgradeInitializers/DiamondInit.sol";
 import "../contracts/facets/DiamondCutFacet.sol";
 import "../contracts/facets/DiamondLoupeFacet.sol";
 import "../contracts/facets/OwnershipFacet.sol";
-import "forge-std/Test.sol";
-import "../contracts/Diamond.sol";
-
-import {P2pFacet} from "../contracts/facets/P2pFacet.sol";
+import "../contracts/facets/P2pFacet.sol";
+import "../contracts/facets/LendingPoolFacet.sol";
+import "../contracts/interfaces/IDiamondCut.sol";
 import "../contracts/model/Protocol.sol";
-import "../contracts/utils/validators/Error.sol";
+import "../contracts/libraries/LibAppStorage.sol";
+import "../contracts/mocks/MockERC20.sol";
+import "../contracts/mocks/MockPriceFeed.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-import {LibGettersImpl} from "../contracts/libraries/LibGetters.sol";
-import {AppStorage} from "../contracts/utils/functions/AppStorage.sol";
-
-import {Event} from "../contracts/model/Event.sol";
-
-contract P2pFacetTest is Test, IDiamondCut, AppStorage {
-    //contract types of facets to be deployed
+// Use the mock contracts from the previous test
+contract P2pFacetTest is Test {
+    // Diamond contracts
     Diamond diamond;
-    DiamondCutFacet dCutFacet;
-    DiamondLoupeFacet dLoupe;
-    OwnershipFacet ownerF;
-    P2pFacet p2pF;
+    DiamondCutFacet diamondCutFacet;
+    DiamondLoupeFacet diamondLoupeFacet;
+    OwnershipFacet ownershipFacet;
+    P2pFacet p2pFacet;
+    DiamondInit diamondInit;
 
-    address[] tokens;
-    address[] priceFeeds;
+    // Mock contracts (same as in LendingPoolFacetTest)
+    MockERC20 mockUSDC;
+    MockERC20 mockWETH;
+    MockPriceFeed mockUSDCPriceFeed;
+    MockPriceFeed mockWETHPriceFeed;
 
-    address _user1 = makeAddr("user 1");
-    address _user2 = makeAddr("user 2");
+    // Test addresses
+    address owner = address(0x1);
+    address borrower = address(0x2);
+    address lender = address(0x3);
+    address liquidator = address(0x4);
+
+    // Constants
+    uint256 constant INITIAL_BALANCE = 10000 * 10 ** 18; // 10000 tokens with 18 decimals
 
     function setUp() public {
-        //deploy facets
-        dCutFacet = new DiamondCutFacet();
-        diamond = new Diamond(address(this), address(dCutFacet));
-        dLoupe = new DiamondLoupeFacet();
-        ownerF = new OwnershipFacet();
-        p2pF = new P2pFacet();
+        // Setup accounts
+        vm.startPrank(owner);
 
-        //upgrade diamond with facets
+        // Deploy mock tokens
+        mockUSDC = new MockERC20("USDC", "USDC", 18, INITIAL_BALANCE);
+        mockWETH = new MockERC20("WETH", "WETH", 18, INITIAL_BALANCE);
 
-        //build cut struct
-        FacetCut[] memory cut = new FacetCut[](3);
+        // Deploy mock price feeds
+        mockUSDCPriceFeed = new MockPriceFeed(1 * 10 ** 8, 8); // $1.00 USD with 8 decimals
+        mockWETHPriceFeed = new MockPriceFeed(2000 * 10 ** 8, 8); // $2000.00 USD with 8 decimals
 
-        cut[0] = (
-            FacetCut({
-                facetAddress: address(dLoupe),
-                action: FacetCutAction.Add,
-                functionSelectors: generateSelectors("DiamondLoupeFacet")
-            })
+        // Setup diamond
+        diamondCutFacet = new DiamondCutFacet();
+        diamond = new Diamond(owner, address(diamondCutFacet));
+
+        // Build diamond cut for facets
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](3);
+
+        // Add DiamondLoupeFacet
+        diamondLoupeFacet = new DiamondLoupeFacet();
+        cuts[0] = IDiamondCut.FacetCut({
+            facetAddress: address(diamondLoupeFacet),
+            action: IDiamondCut.FacetCutAction.Add,
+            functionSelectors: generateSelectors("DiamondLoupeFacet")
+        });
+
+        // Add OwnershipFacet
+        ownershipFacet = new OwnershipFacet();
+        cuts[1] = IDiamondCut.FacetCut({
+            facetAddress: address(ownershipFacet),
+            action: IDiamondCut.FacetCutAction.Add,
+            functionSelectors: generateSelectors("OwnershipFacet")
+        });
+
+        // Add P2pFacet
+        p2pFacet = new P2pFacet();
+        cuts[2] = IDiamondCut.FacetCut({
+            facetAddress: address(p2pFacet),
+            action: IDiamondCut.FacetCutAction.Add,
+            functionSelectors: generateSelectors("P2pFacet")
+        });
+
+        // Initialize diamond
+        diamondInit = new DiamondInit();
+        bytes memory initData = abi.encodeWithSelector(
+            DiamondInit.init.selector
         );
 
-        cut[1] = (
-            FacetCut({
-                facetAddress: address(ownerF),
-                action: FacetCutAction.Add,
-                functionSelectors: generateSelectors("OwnershipFacet")
-            })
+        IDiamondCut(address(diamond)).diamondCut(
+            cuts,
+            address(diamondInit),
+            initData
         );
 
-        cut[2] = (
-            FacetCut({
-                facetAddress: address(p2pF),
-                action: FacetCutAction.Add,
-                functionSelectors: generateSelectors("P2pFacet")
-            })
+        // Setup protocol tokens and price feeds
+        address[] memory tokens = new address[](2);
+        address[] memory priceFeeds = new address[](2);
+
+        tokens[0] = address(mockUSDC);
+        tokens[1] = address(mockWETH);
+
+        priceFeeds[0] = address(mockUSDCPriceFeed);
+        priceFeeds[1] = address(mockWETHPriceFeed);
+
+        // Initialize the Diamond with tokens
+        Diamond(payable(address(diamond))).initialize(
+            tokens,
+            priceFeeds,
+            address(2)
         );
 
-        //upgrade diamond
-        IDiamondCut(address(diamond)).diamondCut(cut, address(0x0), "");
+        // Give tokens to test users
+        mockUSDC.mint(borrower, INITIAL_BALANCE);
+        mockUSDC.mint(lender, INITIAL_BALANCE);
+        mockWETH.mint(borrower, INITIAL_BALANCE);
+        mockWETH.mint(lender, INITIAL_BALANCE);
+        mockUSDC.mint(liquidator, INITIAL_BALANCE);
+        mockWETH.mint(liquidator, INITIAL_BALANCE);
 
-        //call a function
-        DiamondLoupeFacet(address(diamond)).facetAddresses();
+        vm.warp(block.timestamp + 1000000000000000000);
 
-        // ETH
-        tokens.push(address(1));
-        priceFeeds.push(0x59F1ec1f10bD7eD9B938431086bC1D9e233ECf41);
-        // priceFeeds.push(0x6bF14CB0A831078629D993FDeBcB182b21A8774C);
-
-        // USDC
-        // tokens.push()
-        // tokens.push(0xFadA8b0737D4A3AE7118918B7E69E689034c0127)
-
-        diamond.initialize(tokens, priceFeeds, address(diamond));
-
-        P2pFacet(payable(diamond)).setSwapRouter(
-            0xfB5f26851E03449A0403Ca945eBB4201415fd1fc
-        );
-
-        vm.deal(_user1, 20 ether);
-        vm.deal(_user2, 50 ether);
+        vm.stopPrank();
     }
 
-    function testPriceFeedData() public view {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
+    function testCreateLoanListing() public {
+        // Lender creates a loan listing
+        vm.startPrank(lender);
+        mockUSDC.approve(address(diamond), 1000 * 10 ** 18);
 
-        uint256 value = p2pContract.getUsdValue(address(1), 1e18, 18);
-        assertGt(value, 1600e18);
-    }
+        (uint96 listingId, uint96[] memory matchedRequests) = P2pFacet(
+            payable(address(diamond))
+        ).createLoanListingWithMatching(
+                1000 * 10 ** 18, // Amount
+                100 * 10 ** 18, // Min amount
+                500 * 10 ** 18, // Max amount
+                block.timestamp + 30 days, // Return duration
+                300, // 3% interest
+                address(mockUSDC),
+                false // No auto-matching
+            );
+        vm.stopPrank();
 
-    function testLoanListingDuration() public {
-        switchSigner(_user1);
-        _depositCollateral();
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
+        // Verify listing creation
+        assertEq(listingId, 1, "First listing should have ID 1");
+        assertEq(matchedRequests.length, 0, "No matches should be found yet");
 
-        uint256 _amount = 1 ether;
-        uint256 _min_amount = 0.1 ether;
-        uint256 _max_amount = 1 ether;
-        uint256 _returnDate = block.timestamp + 365 days;
-        uint16 _interestRate = 1000;
-        address _loanCurrency = tokens[0];
+        // Check listing is stored correctly
+        LoanListing memory listing = P2pFacet(payable(address(diamond)))
+            .getLoanListing(listingId);
 
-        p2pContract.createLoanListing{value: 1 ether}(
-            _amount,
-            _min_amount,
-            _max_amount,
-            _returnDate,
-            _interestRate,
-            _loanCurrency
-        );
-
-        LoanListing memory _listing = p2pContract.getLoanListing(1);
-        assertEq(_listing.amount, _amount);
-        assertEq(_listing.returnDuration, 365 days);
-        assertEq(uint8(_listing.listingStatus), uint8(ListingStatus.OPEN));
-    }
-
-    function testRequestExpiration() public {
-        switchSigner(_user1);
-        _depositCollateral();
-
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-
-        uint256 _amount = 7 ether;
-        uint16 _interest = 500;
-        uint256 _returnDuration = block.timestamp + 30 days;
-        uint256 _expirationDate = block.timestamp + 1 days;
-        address _loanCurrency = tokens[0];
-
-        p2pContract.createLendingRequest(
-            _amount,
-            _interest,
-            _returnDuration,
-            _expirationDate,
-            _loanCurrency
-        );
-
-        Request memory _requestBeforeTimeWarp = p2pContract.getRequest(1);
-        assertEq(_requestBeforeTimeWarp.amount, _amount);
+        assertEq(listing.author, lender, "Author should be the lender");
         assertEq(
-            _requestBeforeTimeWarp.expirationDate,
-            block.timestamp + 1 days
+            listing.tokenAddress,
+            address(mockUSDC),
+            "Token should be USDC"
         );
-        assertEq(uint8(_requestBeforeTimeWarp.status), uint8(Status.OPEN));
-
-        vm.warp(block.timestamp + 2 days);
-
-        switchSigner(_user2);
-        vm.expectRevert(Protocol__RequestNotOpen.selector);
-        p2pContract.serviceRequest{value: 10 ether}(1, tokens[0]);
+        assertEq(listing.amount, 1000 * 10 ** 18, "Amount should match");
+        assertTrue(
+            listing.listingStatus == ListingStatus.OPEN,
+            "Listing should be open"
+        );
     }
 
-    function testRequestCancellation() public {
-        switchSigner(_user1);
-        _depositCollateral();
+    function testCreateLendingRequest() public {
+        // Borrower creates a lending request with collateral
+        vm.startPrank(borrower);
+        mockWETH.approve(address(diamond), 1 * 10 ** 18);
 
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
+        address[] memory collateralTokens = new address[](1);
+        uint256[] memory collateralAmounts = new uint256[](1);
+        collateralTokens[0] = address(mockWETH);
+        collateralAmounts[0] = 1 * 10 ** 18; // 1 WETH worth $2000
 
-        uint256 _amount = 7 ether;
-        uint16 _interest = 500;
-        uint256 _returnDuration = block.timestamp + 30 days;
-        uint256 _expirationDate = block.timestamp + 1 days;
-        address _loanCurrency = tokens[0];
+        (uint96 requestId, bool matched) = P2pFacet(payable(address(diamond)))
+            .createAndMatchLendingRequest(
+                1000 * 10 ** 18, // Borrow 1000 USDC
+                500, // 5% interest
+                block.timestamp + 30 days, // Return duration
+                block.timestamp + 7 days, // Expiration
+                address(mockUSDC), // Borrow USDC
+                collateralTokens,
+                collateralAmounts,
+                false // Don't use existing collateral
+            );
+        vm.stopPrank();
 
-        p2pContract.createLendingRequest(
-            _amount,
-            _interest,
-            _returnDuration,
-            _expirationDate,
-            _loanCurrency
+        // Verify request creation
+        assertEq(requestId, 1, "First request should have ID 1");
+        assertFalse(matched, "Request shouldn't be matched yet");
+
+        // Check request details
+        Request memory request = P2pFacet(payable(address(diamond))).getRequest(
+            requestId
+        );
+        assertEq(request.author, borrower, "Author should be the borrower");
+        assertEq(request.amount, 1000 * 10 ** 18, "Amount should match");
+        assertEq(
+            request.loanRequestAddr,
+            address(mockUSDC),
+            "Token should be USDC"
+        );
+        assertEq(
+            uint8(request.status),
+            uint8(Status.OPEN),
+            "Status should be OPEN"
+        );
+    }
+
+    function testServiceRequest() public {
+        // First create a request
+        testCreateLendingRequest();
+
+        // Now lender services the request
+        vm.startPrank(lender);
+        mockUSDC.approve(address(diamond), 1000 * 10 ** 18);
+        P2pFacet(payable(address(diamond))).serviceRequest(
+            1,
+            address(mockUSDC)
+        );
+        vm.stopPrank();
+
+        // Verify request was serviced
+        Request memory request = P2pFacet(payable(address(diamond))).getRequest(
+            1
+        );
+        assertEq(
+            uint8(request.status),
+            uint8(Status.SERVICED),
+            "Status should be SERVICED"
+        );
+        assertEq(request.lender, lender, "Lender should be set");
+
+        // Check borrower received funds
+        assertEq(
+            mockUSDC.balanceOf(borrower),
+            INITIAL_BALANCE + 1000 * 10 ** 18,
+            "Borrower should receive the loan amount"
+        );
+    }
+
+    function testRepayLoan() public {
+        // Setup a loan by creating and servicing a request
+        uint256 initialBorrowerWETHBalance = mockWETH.balanceOf(borrower);
+        testServiceRequest();
+
+        // Calculate full repayment (principal + interest)
+        Request memory request = P2pFacet(payable(address(diamond))).getRequest(
+            1
+        );
+        uint256 fullRepayment = request.totalRepayment;
+
+        // Borrower repays the loan
+        vm.startPrank(borrower);
+        mockUSDC.approve(address(diamond), fullRepayment);
+        P2pFacet(payable(address(diamond))).repayLoan(1, 0); // 0 means full repayment
+        vm.stopPrank();
+
+        // Verify loan is closed
+        request = P2pFacet(payable(address(diamond))).getRequest(1);
+        assertEq(
+            uint8(request.status),
+            uint8(Status.CLOSED),
+            "Status should be CLOSED"
         );
 
-        Request memory _requestBeforeClosing = p2pContract.getRequest(1);
-        assertEq(uint8(_requestBeforeClosing.status), uint8(Status.OPEN));
-
-        p2pContract.closeRequest(1);
-
-        switchSigner(_user2);
-        vm.expectRevert(Protocol__RequestNotOpen.selector);
-        p2pContract.serviceRequest{value: 10 ether}(1, tokens[0]);
-
-        Request memory _requestAfterClosing = p2pContract.getRequest(1);
-        assertEq(uint8(_requestAfterClosing.status), uint8(Status.CLOSED));
-    }
-
-    function testStalePriceFeed() public {
-        switchSigner(_user1);
-        _depositCollateral();
-        _createLendingRequest();
-
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-
-        vm.warp(block.timestamp + 4 hours);
-
-        switchSigner(_user2);
-        vm.expectRevert(Protocol__PriceStale.selector);
-        p2pContract.serviceRequest{value: 7 ether}(1, tokens[0]);
-    }
-
-    function testP2pFailSafeMechanism() public {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-
-        vm.expectEmit(true, false, false, true);
-        emit Event.P2pFailSafeStatus(true);
-        p2pContract.activtateFailSafe(true);
-
-        vm.expectRevert(Protocol__P2pIsStopped.selector);
-        _depositCollateral();
-
-        vm.expectRevert(Protocol__P2pIsStopped.selector);
-        _createLendingRequest();
-
-        vm.expectRevert(Protocol__P2pIsStopped.selector);
-        p2pContract.serviceRequest{value: 1 ether}(1, tokens[0]);
-
-        vm.expectRevert(Protocol__P2pIsStopped.selector);
-        p2pContract.withdrawCollateral(tokens[0], 2 ether);
-
-        vm.expectRevert(Protocol__P2pIsStopped.selector);
-        p2pContract.repayLoan{value: 2 ether}(1, 2 ether);
-
-        vm.expectRevert(Protocol__P2pIsStopped.selector);
-        p2pContract.requestLoanFromListing(1, 2 ether);
-    }
-
-    function testLiquidationCriteria() public {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-        switchSigner(_user1);
-        _depositCollateral();
-        uint256 _amount = 0.2 ether;
-        uint16 _interest = 200;
-        uint256 _returnDuration = block.timestamp + 30 days;
-        uint256 _expirationDate = block.timestamp + 1 days;
-        address _loanCurrency = tokens[0];
-
-        p2pContract.createLendingRequest(
-            _amount,
-            _interest,
-            _returnDuration,
-            _expirationDate,
-            _loanCurrency
+        // Check collateral returned to borrower
+        uint256 borrowerWETHBalance = mockWETH.balanceOf(borrower);
+        assertEq(
+            borrowerWETHBalance,
+            initialBorrowerWETHBalance,
+            "Borrower should get their collateral back"
         );
-        switchSigner(_user2);
-        _serviceRequest();
-        assertFalse(p2pContract.checkLiquidationEligibility(_user1));
-
-        switchSigner(_user1);
-        _createLendingRequest();
-
-        switchSigner(_user2);
-        p2pContract.serviceRequest{value: 7 ether}(2, tokens[0]);
-        assertTrue(p2pContract.checkLiquidationEligibility(_user1));
     }
 
     function testLiquidateUserRequest() public {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-        switchSigner(_user1);
-        _depositCollateral();
-        _createLendingRequest();
+        // Setup a loan by creating and servicing a request
+        testServiceRequest();
 
-        switchSigner(_user2);
-        _serviceRequest();
+        // Decrease collateral value by reducing ETH price
+        vm.startPrank(owner);
+        mockWETHPriceFeed.setPrice(500 * 10 ** 8); // ETH price drops from $2000 to $500
+        vm.stopPrank();
 
-        p2pContract.liquidateUserRequest(1);
-    }
+        // Check if position is liquidatable
+        bool isLiquidatable = P2pFacet(payable(address(diamond)))
+            .isPositionLiquidatable(borrower, 1);
+        assertTrue(
+            isLiquidatable,
+            "Position should be liquidatable after price drop"
+        );
 
-    function _depositCollateral() public {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-        p2pContract.depositCollateral{value: 10 ether}(tokens[0], 10 ether);
-    }
+        // Liquidator performs liquidation
+        vm.startPrank(liquidator);
+        mockUSDC.approve(address(diamond), 1050 * 10 ** 18); // Enough to cover loan + interest
+        P2pFacet(payable(address(diamond))).liquidateUserRequest(1);
+        vm.stopPrank();
 
-    function _createLendingRequest() public {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-        uint256 _amount = 7 ether;
-        uint16 _interest = 500;
-        uint256 _returnDuration = block.timestamp + 30 days;
-        uint256 _expirationDate = block.timestamp + 1 days;
-        address _loanCurrency = tokens[0];
+        // Verify liquidation
+        Request memory request = P2pFacet(payable(address(diamond))).getRequest(
+            1
+        );
+        assertEq(
+            uint8(request.status),
+            uint8(Status.LIQUIDATED),
+            "Status should be LIQUIDATED"
+        );
 
-        p2pContract.createLendingRequest(
-            _amount,
-            _interest,
-            _returnDuration,
-            _expirationDate,
-            _loanCurrency
+        // Check liquidator received collateral
+        uint256 liquidatorWETHBalance = mockWETH.balanceOf(liquidator);
+        assertGt(
+            liquidatorWETHBalance,
+            INITIAL_BALANCE,
+            "Liquidator should receive collateral"
         );
     }
 
-    function _serviceRequest() public {
-        P2pFacet p2pContract = P2pFacet(payable(diamond));
-        p2pContract.serviceRequest{value: 7 ether}(1, tokens[0]);
-    }
+    function testAutoMatchingLoan() public {
+        // Lender creates a loan listing
+        vm.startPrank(lender);
+        mockUSDC.approve(address(diamond), 1000 * 10 ** 18);
 
-    function mkaddr(string memory name) public returns (address) {
-        address addr = address(
-            uint160(uint256(keccak256(abi.encodePacked(name))))
+        (uint96 listingId, ) = P2pFacet(payable(address(diamond)))
+            .createLoanListingWithMatching(
+                1000 * 10 ** 18, // Amount
+                100 * 10 ** 18, // Min amount
+                500 * 10 ** 18, // Max amount
+                block.timestamp + 30 days, // Return duration
+                300, // 3% interest
+                address(mockUSDC),
+                false // No auto-matching yet
+            );
+        vm.stopPrank();
+
+        // Borrower creates a matching request
+        vm.startPrank(borrower);
+        mockWETH.approve(address(diamond), 1 * 10 ** 18);
+
+        address[] memory collateralTokens = new address[](1);
+        uint256[] memory collateralAmounts = new uint256[](1);
+        collateralTokens[0] = address(mockWETH);
+        collateralAmounts[0] = 1 * 10 ** 18; // 1 WETH worth $2000
+
+        (uint96 requestId, bool matched) = P2pFacet(payable(address(diamond)))
+            .createAndMatchLendingRequest(
+                500 * 10 ** 18, // Borrow 500 USDC (within min/max range)
+                400, // 4% interest - willing to pay more than lender asks
+                block.timestamp + 15 days, // Shorter than max duration
+                block.timestamp + 7 days, // Expiration
+                address(mockUSDC),
+                collateralTokens,
+                collateralAmounts,
+                false // Don't use existing collateral
+            );
+        vm.stopPrank();
+
+        // Verify matching
+        assertTrue(matched, "Request should be automatically matched");
+
+        // Check request details
+        Request memory request = P2pFacet(payable(address(diamond))).getRequest(
+            requestId
         );
-        vm.label(addr, name);
-        return addr;
+        assertEq(
+            uint8(request.status),
+            uint8(Status.SERVICED),
+            "Status should be SERVICED"
+        );
+        assertEq(request.lender, lender, "Lender should be set correctly");
+
+        // Check balances
+        assertEq(
+            mockUSDC.balanceOf(borrower),
+            INITIAL_BALANCE + 500 * 10 ** 18,
+            "Borrower should receive loan amount"
+        );
+
+        // Check listing was updated
+        LoanListing memory listing = P2pFacet(payable(address(diamond)))
+            .getLoanListing(listingId);
+
+        assertEq(
+            listing.amount,
+            500 * 10 ** 18,
+            "Listing amount should be reduced"
+        );
+        assertTrue(
+            listing.listingStatus == ListingStatus.OPEN,
+            "Listing should still be open with remaining amount"
+        );
     }
 
-    function switchSigner(address _newSigner) public {
-        address foundrySigner = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
-        if (msg.sender == foundrySigner) {
-            vm.startPrank(_newSigner);
-        } else {
-            vm.stopPrank();
-            vm.startPrank(_newSigner);
-        }
+    function testUseExistingCollateral() public {
+        // Borrower first deposits some collateral without creating a loan
+        vm.startPrank(borrower);
+        mockWETH.approve(address(diamond), 1 * 10 ** 18);
+
+        address[] memory collateralTokens = new address[](1);
+        uint256[] memory collateralAmounts = new uint256[](1);
+        collateralTokens[0] = address(mockWETH);
+        collateralAmounts[0] = 1 * 10 ** 18; // 1 WETH worth $2000
+
+        // Create a deposit-only position
+        LendingPoolFacet(payable(address(diamond))).deposit(
+            collateralTokens[0],
+            collateralAmounts[0],
+            true
+        );
+        vm.stopPrank();
+
+        // Create a loan listing by lender
+        vm.startPrank(lender);
+        mockUSDC.approve(address(diamond), 1000 * 10 ** 18);
+
+        P2pFacet(payable(address(diamond))).createLoanListingWithMatching(
+            1000 * 10 ** 18, // Amount
+            100 * 10 ** 18, // Min amount
+            500 * 10 ** 18, // Max amount
+            30 days, // Return duration
+            300, // 3% interest
+            address(mockUSDC),
+            false // No auto-matching
+        );
+        vm.stopPrank();
+
+        // Now borrower uses existing collateral for a loan
+        vm.startPrank(borrower);
+
+        // Empty arrays for new collateral
+        address[] memory noCollateralTokens = new address[](0);
+        uint256[] memory noCollateralAmounts = new uint256[](0);
+
+        (uint96 requestId, bool matched) = P2pFacet(payable(address(diamond)))
+            .createAndMatchLendingRequest(
+                500 * 10 ** 18, // Borrow 500 USDC
+                400, // 4% interest
+                block.timestamp + 15 days,
+                block.timestamp + 7 days,
+                address(mockUSDC),
+                noCollateralTokens,
+                noCollateralAmounts,
+                true // Use existing collateral
+            );
+        vm.stopPrank();
+
+        // Verify matched and using existing collateral
+        assertTrue(matched, "Request should be matched");
+
+        // Check request details
+        Request memory request = P2pFacet(payable(address(diamond))).getRequest(
+            requestId
+        );
+        assertEq(
+            uint8(request.status),
+            uint8(Status.SERVICED),
+            "Status should be SERVICED"
+        );
+
+        // Verify collateral tokens include existing collateral
+        assertEq(
+            request.collateralTokens.length,
+            1,
+            "Should use 1 collateral token"
+        );
+        assertEq(
+            request.collateralTokens[0],
+            address(mockWETH),
+            "Should use WETH collateral"
+        );
     }
 
+    // Helper function to generate function selectors from contract name
     function generateSelectors(
         string memory _facetName
     ) internal returns (bytes4[] memory selectors) {
@@ -331,10 +486,4 @@ contract P2pFacetTest is Test, IDiamondCut, AppStorage {
         bytes memory res = vm.ffi(cmd);
         selectors = abi.decode(res, (bytes4[]));
     }
-
-    function diamondCut(
-        FacetCut[] calldata _diamondCut,
-        address _init,
-        bytes calldata _calldata
-    ) external override {}
 }

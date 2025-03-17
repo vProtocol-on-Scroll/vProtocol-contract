@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.9;
+pragma solidity ^0.8.19;
 
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {LibAppStorage} from "./LibAppStorage.sol";
+import {LibToken, LibPriceOracle} from "./LibShared.sol";
 import {Constants} from "../utils/constants/Constant.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../model/Protocol.sol";
@@ -10,430 +11,548 @@ import "../utils/validators/Error.sol";
 
 library LibGettersImpl {
     /**
-     * @dev Converts a specified token amount to its USD-equivalent value based on
-     *      the latest price from the token's price feed.
-     *
-     * @param _appStorage The application storage layout containing the price feed data.
-     * @param _token The address of the token to be converted.
-     * @param _amount The amount of the token to convert to USD.
-     * @param _decimal The decimal precision of the token.
-     *
-     * @return The USD-equivalent value of the specified token amount, adjusted to a standard precision.
-     *
-     * The function retrieves the latest price for `_token` from its price feed, scales it
-     * to a common precision using `Constants.NEW_PRECISION`, and returns the USD-equivalent
-     * value by factoring in the token's decimal precision.
+     * @dev Gets the USD value of a token amount using Chainlink price feeds
      */
     function _getUsdValue(
-        LibAppStorage.Layout storage _appStorage,
-        address _token,
-        uint256 _amount,
-        uint8 _decimal
+        LibAppStorage.Layout storage s,
+        address token,
+        uint256 amount,
+        uint8 decimal
     ) internal view returns (uint256) {
-        // AggregatorV3Interface _priceFeed = AggregatorV3Interface(
-        //     _appStorage.s_priceFeeds[_token]
-        // );
-        // (, int256 _price, , , ) = _priceFeed.latestRoundData();
-        (int256 _price, bool _isStale) = _isPriceStale(_appStorage, _token);
-        if (_isStale) revert Protocol__PriceStale();
+        (int256 price, bool isStale) = _getPriceFromOracle(s, token);
+        if (isStale) revert Protocol__PriceStale();
         return
-            ((uint256(_price) * Constants.NEW_PRECISION) * (_amount)) /
-            ((10 ** _decimal));
+            ((uint256(price) * Constants.NEW_PRECISION) * amount) /
+            (10 ** decimal);
     }
 
     /**
-     * @dev Converts an amount of one token (`_from`) to its equivalent amount in another token (`_to`),
-     *      based on their USD values and decimal precision.
-     *
-     * @param _appStorage The application storage layout containing price feed and token data.
-     * @param _from The address of the token being converted from.
-     * @param _to The address of the token being converted to.
-     * @param _amount The amount of the `_from` token to convert.
-     *
-     * @return value The equivalent amount of the `_to` token.
-     *
-     * The function first retrieves the decimal precision of both tokens, then calculates
-     * the USD value of `_amount` in `_from` tokens. It converts this USD value to the
-     * equivalent `_to` token amount, adjusting for decimal precision, and returns the result.
+     * @dev Gets price data from Chainlink oracle and checks for staleness
      */
-
-    function _getConvertValue(
-        LibAppStorage.Layout storage _appStorage,
-        address _from,
-        address _to,
-        uint256 _amount
-    ) internal view returns (uint256 value) {
-        uint8 fromDecimal = _getTokenDecimal(_from);
-        uint8 toDecimal = _getTokenDecimal(_to);
-        uint256 fromUsd = _getUsdValue(
-            _appStorage,
-            _from,
-            _amount,
-            fromDecimal
+    function _getPriceFromOracle(
+        LibAppStorage.Layout storage s,
+        address token
+    ) internal view returns (int256 price, bool isStale) {
+        TokenData storage tokenData = s.tokenData[token];
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            tokenData.priceFeed
         );
-        value = (((fromUsd * 10) / _getUsdValue(_appStorage, _to, 10, 0)) *
+        uint256 updatedAt;
+        (
+            ,
+            /* uint80 roundId */ price,
+            ,
+            /* uint256 startedAt */ updatedAt,
+            /* uint80 answeredInRound */
+
+        ) = priceFeed.latestRoundData();
+        isStale =
+            (block.timestamp - updatedAt) > Constants.PRICE_STALE_THRESHOLD;
+    }
+
+    /**
+     * @dev Converts between token amounts based on their USD values
+     */
+    function _getConvertValue(
+        LibAppStorage.Layout storage s,
+        address from,
+        address to,
+        uint256 amount
+    ) internal view returns (uint256 value) {
+        uint8 fromDecimal = _getTokenDecimal(from);
+        uint8 toDecimal = _getTokenDecimal(to);
+        uint256 fromUsd = _getUsdValue(s, from, amount, fromDecimal);
+        value = (((fromUsd * 10) / _getUsdValue(s, to, 10, 0)) *
             (10 ** toDecimal));
     }
 
     /**
-     * @dev This uses Chainlink pricefeed and ERC20 Standard in getting the Token/USD price and Token decimals.
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _user The address of the user you want to get their collateral value.
-     *
-     * @return _totalCollateralValueInUsd returns the value of the user deposited collateral in USD.
+     * @dev Gets total collateral value in USD for a user
      */
     function _getAccountCollateralValue(
-        LibAppStorage.Layout storage _appStorage,
-        address _user
-    ) internal view returns (uint256 _totalCollateralValueInUsd) {
-        for (
-            uint256 index = 0;
-            index < _appStorage.s_collateralToken.length;
-            index++
-        ) {
-            address _token = _appStorage.s_collateralToken[index];
-            uint256 _amount = _appStorage.s_addressToCollateralDeposited[_user][
-                _token
-            ];
-            uint8 _tokenDecimal = _getTokenDecimal(_token);
-            _totalCollateralValueInUsd += _getUsdValue(
-                _appStorage,
-                _token,
-                _amount,
-                _tokenDecimal
-            );
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 totalCollateralValueInUsd) {
+        UserPosition storage position = s.userPositions[user];
+
+        for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+            uint256 amount = position.collateral[token];
+            if (amount > 0) {
+                uint8 decimal = _getTokenDecimal(token);
+                totalCollateralValueInUsd += _getUsdValue(
+                    s,
+                    token,
+                    amount,
+                    decimal
+                );
+            }
         }
     }
 
     /**
-     * @dev This uses Chainlink pricefeed and ERC20 Standard in getting the Token/USD price and Token decimals.
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _user the address of the user you want to get their available balance value
-     *
-     * @return _totalAvailableValueInUsd returns the value of the user available balance in USD
+     * @dev Gets total available balance value in USD for a user
      */
     function _getAccountAvailableValue(
-        LibAppStorage.Layout storage _appStorage,
-        address _user
-    ) internal view returns (uint256 _totalAvailableValueInUsd) {
-        for (
-            uint256 index = 0;
-            index < _appStorage.s_collateralToken.length;
-            index++
-        ) {
-            address _token = _appStorage.s_collateralToken[index];
-            uint256 _amount = _appStorage.s_addressToAvailableBalance[_user][
-                _token
-            ];
-            uint8 _tokenDecimal = _getTokenDecimal(_token);
-            _totalAvailableValueInUsd += _getUsdValue(
-                _appStorage,
-                _token,
-                _amount,
-                _tokenDecimal
-            );
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 totalAvailableValueInUsd) {
+        UserPosition storage position = s.userPositions[user];
+
+        for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+
+            // Include both pool deposits and P2P lending
+            uint256 poolAmount = position.poolDeposits[token];
+            uint256 p2pAmount = position.p2pLentAmount[token];
+            uint256 totalAmount = poolAmount + p2pAmount;
+
+            if (totalAmount > 0) {
+                uint8 decimal = _getTokenDecimal(token);
+                totalAvailableValueInUsd += _getUsdValue(
+                    s,
+                    token,
+                    totalAmount,
+                    decimal
+                );
+            }
         }
     }
 
     /**
-     * @dev Returns the listing if it exists, otherwise reverts if the listing's author is the zero address
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _listingId The ID of the listing to retrieve
-     *
-     * @return The `LoanListing` struct containing details of the specified listing
+     * @dev Gets loan listing details
      */
     function _getLoanListing(
-        LibAppStorage.Layout storage _appStorage,
-        uint96 _listingId
+        LibAppStorage.Layout storage s,
+        uint96 listingId
     ) internal view returns (LoanListing memory) {
-        LoanListing memory _listing = _appStorage.loanListings[_listingId];
-        if (_listing.author == address(0)) revert Protocol__IdNotExist();
-        return _listing;
+        LoanListing memory listing = s.loanListings[listingId];
+        if (listing.author == address(0)) revert Protocol__IdNotExist();
+        return listing;
     }
 
     /**
-     * @dev Returns the request if it exists, otherwise reverts if the request's author is the zero address
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _requestId The ID of the request to retrieve
-     *
-     * @return _request The `Request` struct containing details of the specified request
+     * @dev Gets loan request details
      */
     function _getRequest(
-        LibAppStorage.Layout storage _appStorage,
-        uint96 _requestId
+        LibAppStorage.Layout storage s,
+        uint96 requestId
     ) internal view returns (Request memory) {
-        Request memory _request = _appStorage.request[_requestId];
-        if (_request.author == address(0)) revert Protocol__NotOwner();
-        return _request;
+        Request memory request = s.requests[requestId];
+        if (request.author == address(0)) revert Protocol__NotOwner();
+        return request;
     }
 
     /**
-     * @dev This gets the account info of any account.
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _user a parameter for the user account info you want to get.
-     *
-     * @return _totalBurrowInUsd returns the total amount of SC the  user has minted.
-     * @return _collateralValueInUsd returns the total collateral the user has deposited in USD.
+     * @dev Gets total account info including borrows and collateral
      */
     function _getAccountInfo(
-        LibAppStorage.Layout storage _appStorage,
-        address _user
+        LibAppStorage.Layout storage s,
+        address user
     )
         internal
         view
-        returns (uint256 _totalBurrowInUsd, uint256 _collateralValueInUsd)
+        returns (uint256 totalBorrowInUsd, uint256 collateralValueInUsd)
     {
-        _totalBurrowInUsd = _getLoanCollectedInUsd(_appStorage, _user);
-        _collateralValueInUsd = _getAccountCollateralValue(_appStorage, _user);
+        totalBorrowInUsd = _getTotalUserDebtInUSD(s, user);
+        collateralValueInUsd = _getAccountCollateralValue(s, user);
     }
 
     /**
-     * @dev Checks the health Factor which is a way to check if the user has enough collateral to mint
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _user a parameter for the address to check
-     * @param _borrowValue amount the user wants to borrow in usd
-     *
-     * @return uint256 returns the health factor which is supoose to be >= 1
+     * @dev Calculates user's health factor
      */
     function _healthFactor(
-        LibAppStorage.Layout storage _appStorage,
-        address _user,
-        uint256 _borrowValue
+        LibAppStorage.Layout storage s,
+        address user,
+        uint256 newBorrowValue
     ) internal view returns (uint256) {
         (
-            uint256 _totalBurrowInUsd,
-            uint256 _collateralValueInUsd
-        ) = _getAccountInfo(_appStorage, _user);
-        uint256 _collateralAdjustedForThreshold = (_collateralValueInUsd *
-            Constants.LIQUIDATION_THRESHOLD) / 100;
+            uint256 totalBorrowInUsd,
+            uint256 collateralValueInUsd
+        ) = _getAccountInfo(s, user);
 
-        if ((_totalBurrowInUsd == 0) && (_borrowValue == 0))
-            return (_collateralAdjustedForThreshold * Constants.PRECISION);
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
+            Constants.LIQUIDATION_THRESHOLD) / Constants.PERCENTAGE_FACTOR;
+
+        if ((totalBorrowInUsd == 0) && (newBorrowValue == 0))
+            return type(uint256).max;
 
         return
-            (_collateralAdjustedForThreshold * Constants.PRECISION) /
-            (_totalBurrowInUsd + _borrowValue);
+            (collateralAdjustedForThreshold * Constants.PRECISION) /
+            (totalBorrowInUsd + newBorrowValue);
     }
 
-    /**
-     * @dev This uses the openZeppelin ERC20 standard to get the decimals of token, but if the token is the blockchain native token(ETH) it returns 18.
-     *
-     * @param _token The token address.
-     *
-     * @return _decimal The token decimal.
-     */
-    function _getTokenDecimal(
-        address _token
-    ) internal view returns (uint8 _decimal) {
-        if (_token == Constants.NATIVE_TOKEN) {
-            _decimal = 18;
-        } else {
-            _decimal = ERC20(_token).decimals();
+    function _getP2pHealthFactor(
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 p2pHealthFactor) {
+        Request[] memory requests = _getUserActiveRequests(s, user);
+        for (uint256 i = 0; i < requests.length; i++) {
+            p2pHealthFactor += _calculatePositionHealthFactor(
+                s,
+                requests[i].requestId
+            );
         }
+        return p2pHealthFactor / requests.length;
+    }
+
+    function _getPoolHealthFactor(
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 poolHealthFactor) {
+        uint256[] memory loanIds = s.userPoolLoans[user];
+
+        for (uint256 i = 0; i < loanIds.length; i++) {
+            if (s.poolLoans[loanIds[i]].status == LoanStatus.ACTIVE) {
+                poolHealthFactor += _calculateLoanHealthFactor(
+                    s,
+                    s.poolLoans[loanIds[i]]
+                );
+            }
+        }
+        return poolHealthFactor / loanIds.length;
     }
 
     /**
-     * @dev Returns the request if it exists, otherwise reverts if the request's author is the zero address
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _user the addresss of the user
-     * @param _requestId the id of the request that was created by the user
-     *
-     * @return _request The request of the user
+     * @notice Calculate health factor for a specific position
+     * @param requestId Request ID
+     * @return Health factor in basis points
+     */
+    function _calculatePositionHealthFactor(
+        LibAppStorage.Layout storage s,
+        uint96 requestId
+    ) internal view returns (uint256) {
+        Request storage request = s.requests[requestId];
+
+        // Get loan value
+        uint8 loanDecimal = LibToken.getDecimals(request.loanRequestAddr);
+        uint256 loanUsdValue = LibPriceOracle.getTokenUsdValue(
+            s,
+            request.loanRequestAddr,
+            request.totalRepayment,
+            loanDecimal
+        );
+
+        // Calculate collateral value
+        uint256 totalCollateralValue = 0;
+        uint256 weightedLiquidationThreshold = 0;
+
+        for (uint i = 0; i < request.collateralTokens.length; i++) {
+            address token = request.collateralTokens[i];
+            uint256 collateralAmount = s.s_idToCollateralTokenAmount[requestId][
+                token
+            ];
+
+            if (collateralAmount > 0) {
+                uint8 decimal = LibToken.getDecimals(token);
+                uint256 tokenValue = LibPriceOracle.getTokenUsdValue(
+                    s,
+                    token,
+                    collateralAmount,
+                    decimal
+                );
+
+                totalCollateralValue += tokenValue;
+                weightedLiquidationThreshold +=
+                    tokenValue *
+                    s.tokenConfigs[token].liquidationThreshold;
+            }
+        }
+
+        if (loanUsdValue == 0) {
+            return type(uint256).max;
+        }
+
+        if (totalCollateralValue == 0) {
+            return 0;
+        }
+
+        // Calculate weighted liquidation threshold
+        uint256 avgLiquidationThreshold = weightedLiquidationThreshold /
+            totalCollateralValue;
+
+        // Calculate health factor
+        uint256 adjustedCollateralValue = (totalCollateralValue *
+            avgLiquidationThreshold) / 10000;
+        return (adjustedCollateralValue * 10000) / loanUsdValue;
+    }
+
+    /**
+     * @notice Calculate health factor for a specific loan
+     * @param loan Loan to calculate for
+     * @return Health factor (scaled by 10000)
+     */
+    function _calculateLoanHealthFactor(
+        LibAppStorage.Layout storage s,
+        PoolLoan storage loan
+    ) internal view returns (uint256) {
+        // Calculate current debt with interest
+        uint256 accrued = _calculateAccruedInterest(loan);
+        uint256 totalDebt = loan.borrowAmount + accrued;
+
+        // Calculate debt value
+        uint8 debtDecimals = LibToken.getDecimals(loan.borrowToken);
+        uint256 debtValue = LibPriceOracle.getTokenUsdValue(
+            s,
+            loan.borrowToken,
+            totalDebt,
+            debtDecimals
+        );
+
+        if (debtValue == 0) {
+            return type(uint256).max;
+        }
+
+        // Calculate total collateral value with liquidation thresholds
+        uint256 adjustedCollateralValue = 0;
+
+        for (uint i = 0; i < loan.collaterals.length; i++) {
+            address token = loan.collaterals[i];
+            uint256 amount = loan.collateralAmounts[token];
+
+            if (amount > 0) {
+                uint8 decimal = LibToken.getDecimals(token);
+                uint256 value = LibPriceOracle.getTokenUsdValue(
+                    s,
+                    token,
+                    amount,
+                    decimal
+                );
+
+                // Apply liquidation threshold
+                uint256 liquidationThreshold = s
+                    .tokenConfigs[token]
+                    .liquidationThreshold;
+                adjustedCollateralValue +=
+                    (value * liquidationThreshold) /
+                    10000;
+            }
+        }
+
+        // Calculate health factor
+        return (adjustedCollateralValue * 10000) / debtValue;
+    }
+
+    /**
+     * @notice Calculate accrued interest for a loan
+     * @param loan Loan to calculate for
+     * @return Accrued interest
+     */
+    function _calculateAccruedInterest(
+        PoolLoan storage loan
+    ) internal view returns (uint256) {
+        if (loan.borrowAmount == 0) return 0;
+
+        uint256 timeElapsed = block.timestamp - loan.lastInterestUpdate;
+        if (timeElapsed == 0) return 0;
+
+        // Calculate interest: principal * rate * time
+        return
+            (loan.borrowAmount * loan.interestRate * timeElapsed) /
+            (10000 * Constants.SECONDS_PER_YEAR);
+    }
+
+    /**
+     * @dev Gets token decimals
+     */
+    function _getTokenDecimal(address token) internal view returns (uint8) {
+        if (token == Constants.NATIVE_TOKEN) return 18;
+        return ERC20(token).decimals();
+    }
+
+    /**
+     * @dev Gets user's loan request
      */
     function _getUserRequest(
-        LibAppStorage.Layout storage _appStorage,
-        address _user,
-        uint96 _requestId
+        LibAppStorage.Layout storage s,
+        address user,
+        uint96 requestId
     ) internal view returns (Request memory) {
-        Request memory _request = _appStorage.request[_requestId];
-        if (_request.author != _user) revert Protocol__NotOwner();
-        return _request;
+        Request memory request = s.requests[requestId];
+        if (request.author != user) revert Protocol__NotOwner();
+        return request;
     }
 
     /**
-     * @dev Retrieves all active requests created by a specific user with `Status.SERVICED`.
-     *      This function uses a single loop to count matching requests, allocates an exact-sized
-     *      array for efficiency, and then populates it with the matching requests.
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _user the user you want to get their active requests
-     *
-     * @return _requests An array of active requests
+     * @dev Gets all active requests for a user
      */
     function _getUserActiveRequests(
-        LibAppStorage.Layout storage _appStorage,
-        address _user
-    ) internal view returns (Request[] memory _requests) {
-        uint96 requestId = _appStorage.requestId;
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (Request[] memory) {
+        uint96 requestId = s.requestId;
         uint64 count;
 
+        // Count active requests
         for (uint96 i = 1; i <= requestId; i++) {
-            Request memory request = _appStorage.request[i];
-
-            if (request.author == _user && request.status == Status.SERVICED) {
+            Request memory request = s.requests[i];
+            if (request.author == user && request.status == Status.SERVICED) {
                 count++;
             }
         }
 
-        _requests = new Request[](count);
-        uint64 requestLength;
+        // Create array and populate
+        Request[] memory requests = new Request[](count);
+        uint64 index;
 
         for (uint96 i = 1; i <= requestId; i++) {
-            Request memory request = _appStorage.request[i];
-
-            if (request.author == _user && request.status == Status.SERVICED) {
-                _requests[requestLength] = request;
-                requestLength++;
+            Request memory request = s.requests[i];
+            if (request.author == user && request.status == Status.SERVICED) {
+                requests[index] = request;
+                index++;
             }
         }
+
+        return requests;
     }
 
     /**
-     * @dev Retrieves all requests serviced by a specific user with `Request.lender == user`.
-     *      This function uses a single loop to count matching requests, allocates an exact-sized
-     *      array for efficiency, and then populates it with the matching requests.
-     *
-     * @param _appStorage The storage Layout of the contract.
-     * @param _lender The lender that services the request.
-     *
-     * @return _requests An array of all request serviced by the lender
+     * @dev Gets total user debt in USD across both P2P and pool lending
      */
-    function _getServicedRequestByLender(
-        LibAppStorage.Layout storage _appStorage,
-        address _lender
-    ) internal view returns (Request[] memory _requests) {
-        uint96 requestId = _appStorage.requestId;
-        uint64 count;
+    function _getTotalUserDebtInUSD(
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 totalDebtUSD) {
+        UserPosition storage position = s.userPositions[user];
 
-        for (uint96 i = 1; i <= requestId; i++) {
-            Request memory request = _appStorage.request[i];
+        for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
 
-            if (request.lender == _lender) {
-                count++;
-            }
-        }
+            // Get pool debt with accrued interest
+            uint256 poolDebt = (position.poolBorrows[token] *
+                s.tokenData[token].normalizedPoolDebt) / 1e18;
 
-        _requests = new Request[](count);
-        uint64 requestLength;
+            // Add P2P debt
+            uint256 p2pDebt = position.p2pBorrowedAmount[token];
 
-        for (uint96 i = 1; i <= requestId; i++) {
-            Request memory request = _appStorage.request[i];
-
-            if (request.lender == _lender) {
-                _requests[requestLength] = request;
-                requestLength++;
+            uint256 totalDebt = poolDebt + p2pDebt;
+            if (totalDebt > 0) {
+                uint8 decimal = _getTokenDecimal(token);
+                totalDebtUSD += _getUsdValue(s, token, totalDebt, decimal);
             }
         }
     }
 
     /**
-     * @dev Calculates the total loan amount collected by a user in USD by summing up
-     *      the USD-equivalent values of all active loan requests created by the user.
-     *
-     * @param _appStorage The application storage layout containing request and token data.
-     * @param _user The address of the user whose loan collections are being calculated.
-     *
-     * @return _value The total value of the user's active loan requests, converted to USD.
-     *
-     * The function first retrieves all active requests for `_user` via `_getUserActiveRequests`.
-     * It then iterates over each request, calculates its USD-equivalent value based on its
-     * `loanRequestAddr` and `totalRepayment`, and accumulates the total into `_value`.
-     */
-    function _getLoanCollectedInUsd(
-        LibAppStorage.Layout storage _appStorage,
-        address _user
-    ) internal view returns (uint256 _value) {
-        Request[] memory userActiveRequest = _getUserActiveRequests(
-            _appStorage,
-            _user
-        );
-        uint256 loans = 0;
-        for (uint i = 0; i < userActiveRequest.length; i++) {
-            uint8 tokenDecimal = _getTokenDecimal(
-                userActiveRequest[i].loanRequestAddr
-            );
-            loans += _getUsdValue(
-                _appStorage,
-                userActiveRequest[i].loanRequestAddr,
-                userActiveRequest[i].totalRepayment,
-                tokenDecimal
-            );
-        }
-        _value = loans;
-    }
-
-    /**
-     * @dev Retrieves a list of collateral token addresses for a specific user.
-     *      Only tokens with a positive available balance or collateral deposited
-     *      by the user are included in the returned array.
-     *
-     * @param _appStorage The application storage layout containing collateral and balance data.
-     * @param _user The address of the user whose collateral tokens are being retrieved.
-     *
-     * @return _collaterals An array of addresses representing the collateral tokens held by `_user`.
-     *
-     * The function first iterates through all collateral tokens to count the tokens
-     * with a positive balance for `_user`, then initializes an array of exact size.
-     * It populates this array in a second loop, storing tokens where the user has
-     * a positive collateral deposit.
+     * @dev Gets all collateral tokens for a user with non-zero balance
+     * @param s Storage layout
+     * @param user User address
+     * @return tokens Array of token addresses
      */
     function _getUserCollateralTokens(
-        LibAppStorage.Layout storage _appStorage,
-        address _user
-    ) internal view returns (address[] memory _collaterals) {
-        address[] memory tokens = _appStorage.s_collateralToken;
-        uint8 userLength = 0;
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (address[] memory tokens) {
+        UserPosition storage position = s.userPositions[user];
+        uint256 tokenCount = 0;
 
-        for (uint256 i = 0; i < tokens.length; i++) {
-            if (_appStorage.s_addressToAvailableBalance[_user][tokens[i]] > 0) {
-                userLength++;
+        // First pass: count tokens with non-zero collateral
+        for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+            if (position.collateral[token] > 0) {
+                tokenCount++;
             }
         }
 
-        address[] memory userTokens = new address[](userLength);
+        // Second pass: create and populate array
+        tokens = new address[](tokenCount);
+        uint256 index = 0;
 
-        for (uint256 i = 0; i < tokens.length; i++) {
-            if (
-                _appStorage.s_addressToCollateralDeposited[_user][tokens[i]] > 0
-            ) {
-                userTokens[userLength - 1] = tokens[i];
-                userLength--;
+        for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+            if (position.collateral[token] > 0) {
+                tokens[index] = token;
+                index++;
             }
         }
 
-        return userTokens;
+        return tokens;
     }
 
-    function _getAllRequest(
-        LibAppStorage.Layout storage _appStorage
-    ) internal view returns (Request[] memory _requests) {
-        uint96 requestId = _appStorage.requestId;
-        _requests = new Request[](requestId);
+    /**
+     * @dev Gets total loan collected in USD for a user across both P2P and pool lending
+     * @param s Storage layout
+     * @param user User address
+     * @return totalLoanUSD Total loan value in USD
+     */
+    function _getLoanCollectedInUsd(
+        LibAppStorage.Layout storage s,
+        address user
+    ) internal view returns (uint256 totalLoanUSD) {
+        UserPosition storage position = s.userPositions[user];
+
+        for (uint256 i = 0; i < s.s_supportedTokens.length; i++) {
+            address token = s.s_supportedTokens[i];
+
+            // Get pool debt with accrued interest
+            uint256 poolDebt = (position.poolBorrows[token] *
+                s.tokenData[token].normalizedPoolDebt) / 1e18;
+
+            // Add P2P debt
+            uint256 p2pDebt = position.p2pBorrowedAmount[token];
+
+            uint256 totalDebt = poolDebt + p2pDebt;
+            if (totalDebt > 0) {
+                uint8 decimal = _getTokenDecimal(token);
+                totalLoanUSD += _getUsdValue(s, token, totalDebt, decimal);
+            }
+        }
+    }
+
+    /**
+     * @dev Gets all serviced requests for a specific lender
+     * @param s Storage layout
+     * @param lender Lender address
+     * @return requests Array of serviced requests
+     */
+    function _getServicedRequestByLender(
+        LibAppStorage.Layout storage s,
+        address lender
+    ) internal view returns (Request[] memory) {
+        uint96 requestId = s.requestId;
+        uint64 count;
+
+        // First pass: count serviced requests for lender
+        for (uint96 i = 1; i <= requestId; i++) {
+            Request memory request = s.requests[i];
+            if (request.lender == lender && request.status == Status.SERVICED) {
+                count++;
+            }
+        }
+
+        // Second pass: create and populate array
+        Request[] memory requests = new Request[](count);
+        uint64 index;
 
         for (uint96 i = 1; i <= requestId; i++) {
-            _requests[i - 1] = _appStorage.request[i];
+            Request memory request = s.requests[i];
+            if (request.lender == lender && request.status == Status.SERVICED) {
+                requests[index] = request;
+                index++;
+            }
         }
+
+        return requests;
     }
 
-    function _isPriceStale(
-        LibAppStorage.Layout storage _appStorage,
-        address _token
-    ) internal view returns (int256, bool) {
-        AggregatorV3Interface _priceFeed = AggregatorV3Interface(
-            _appStorage.s_priceFeeds[_token]
-        );
-        (, int256 _price, , uint256 _timestamp, ) = _priceFeed
-            .latestRoundData();
-        return (
-            _price,
-            ((block.timestamp - _timestamp) > Constants.PRICE_STALE_THRESHOLD)
-        );
+    /**
+     * @dev Gets all requests in the system
+     * @param s Storage layout
+     * @return requests Array of all requests
+     */
+    function _getAllRequest(
+        LibAppStorage.Layout storage s
+    ) internal view returns (Request[] memory) {
+        uint96 requestId = s.requestId;
+
+        // Create array of all requests
+        Request[] memory requests = new Request[](requestId);
+
+        // Populate array with requests
+        for (uint96 i = 1; i <= requestId; i++) {
+            requests[i - 1] = s.requests[i];
+        }
+
+        return requests;
     }
 }

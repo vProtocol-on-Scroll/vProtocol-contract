@@ -1,17 +1,6 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.9;
 
-/**
- * @dev Struct to store information about a user in the system.
- * @param userAddr The address of the user.
- * @param gitCoinPoint Points earned by the user in GitCoin or similar systems.
- * @param totalLoanCollected Total amount of loan the user has collected from the platform.
- */
-struct User {
-    address userAddr;
-    uint8 gitCoinPoint;
-    uint256 totalLoanCollected;
-}
 
 /**
  * @dev Struct to store information about a loan request.
@@ -253,6 +242,43 @@ struct TokenBalance {
     uint256 p2pLiquidity;
 }
 
+/**
+ * @notice Configuration parameters for each supported token
+ * @param ltv Loan-to-value ratio in basis points (e.g., 7500 = 75%)
+ * @param liquidationThreshold Liquidation threshold in basis points (e.g., 8250 = 82.5%)
+ * @param liquidationBonus Liquidation bonus in basis points (e.g., 10500 = 105%)
+ * @param isActive Whether the token is currently active in the protocol
+ * @param reserveFactor Reserve factor in basis points (e.g., 2000 = 20%)
+ */
+struct TokenConfig {
+    uint256 ltv;                    // Maximum loan-to-value ratio
+    uint256 liquidationThreshold;   // Threshold at which position can be liquidated
+    uint256 liquidationBonus;       // Bonus for liquidators
+    bool isActive;                  // Whether token is active
+    uint256 reserveFactor;          // Percentage of interest that goes to reserves
+}
+
+/**
+ * @dev Struct to store information about a reserve.
+ * @param totalDeposits Total deposits in underlying
+ * @param totalBorrows Total borrows in underlying
+ * @param totalDepositShares Total shares issued
+ * @param normalizedDebt Normalized debt amount
+ * @param liquidityIndex Liquidity index for interest accrual
+ * @param borrowIndex Borrow index for interest accrual
+ * @param lastUpdateTimestamp Last update timestamp
+ */
+struct ReserveData {
+    uint256 totalDeposits;          // Total deposits in underlying
+    uint256 totalBorrows;           // Total borrows in underlying
+    uint256 totalDepositShares;     // Total shares issued
+    uint256 normalizedDebt;         // Normalized debt amount
+    uint256 liquidityIndex;         // Liquidity index for interest accrual
+    uint256 borrowIndex;            // Borrow index for interest accrual
+    uint256 lastUpdateTimestamp;    // Last update timestamp
+}
+
+
 // Token-specific rates
 struct TokenRate {
     uint256 lendingPoolRate;
@@ -286,6 +312,25 @@ struct RebalancingConfig {
     uint256 lastRebalanceAmount;
     uint256 totalAmountRebalanced;
 }
+
+
+struct LendingPoolConfig {
+    bool isInitialized;
+    uint256 reserveFactor;           // Global reserve factor
+    uint256 optimalUtilization;      // Optimal utilization rate
+    uint256 baseRate;                // Base interest rate
+    uint256 slopeRate;               // Rate increase slope
+    uint256 slopeExcess;             // Excess utilization slope
+    uint256 lastUpdateTimestamp;     // Last time rates were updated
+    bool isPaused;                   // Emergency pause flag
+}
+
+// Rate and Reserve Data structs
+struct RateData {
+    uint256 depositRate;            // Current deposit APY
+    uint256 borrowRate;             // Current borrow APY
+}
+
 
 // Strategy Configuration
 struct StrategyConfig {
@@ -346,6 +391,30 @@ struct DynamicParams {
     uint256 liquidityWeight;
 }
 
+struct UserPosition {
+    // Combined user position tracking
+    mapping(address => uint256) poolDeposits;      // token => amount
+    mapping(address => uint256) poolBorrows;       // token => normalized debt
+    mapping(address => uint256) p2pLentAmount;     // token => amount
+    mapping(address => uint256) p2pBorrowedAmount; // token => amount
+    mapping(address => uint256) collateral;        // token => amount
+    uint256 totalLoanCollectedUSD;                 // Combined USD value of all loans
+    uint256 lastUpdate;                            // Last position update timestamp
+}
+
+struct TokenData {
+    // Combined token-specific data
+    uint256 poolLiquidity;          // Amount available in lending pool
+    uint256 p2pLiquidity;           // Amount locked in P2P loans
+    uint256 totalDeposits;          // Total deposits across both systems
+    uint256 totalBorrows;           // Total borrows across both systems
+    uint256 normalizedPoolDebt;     // For pool interest calculations
+    uint256 lastUpdateTimestamp;    // Last update of rates
+    bool isLoanable;                // If token can be borrowed
+    address priceFeed;              // Price oracle address
+    address vault;                   // Associated ERC4626 vault
+}
+
 // Rebalancing Action Types
 enum RebalanceAction {
     NONE,
@@ -379,6 +448,18 @@ enum MarketCondition {
     UNSTABLE
 }
 
+/**
+ * @dev Enum for loan status
+ */
+enum LoanStatus {
+    NONE,
+    ACTIVE,
+    REPAID,
+    LIQUIDATED,
+    DEFAULTED
+}
+
+
 
 /**
  * @dev Enum representing the status of a loan request.
@@ -389,7 +470,8 @@ enum MarketCondition {
 enum Status {
     OPEN,
     SERVICED,
-    CLOSED
+    CLOSED,
+    LIQUIDATED
 }
 
 /**
@@ -401,7 +483,6 @@ enum ListingStatus {
     OPEN,
     CLOSED
 }
-
 
 //COREPOOL CONFIG
 // Expanded User State
@@ -415,8 +496,77 @@ struct UserData {
 }
 
 struct VaultConfig {
-    uint256 ltvBps;           // Loan-to-Value (8500 = 85%)
+    uint256 ltvBps; // Loan-to-Value (8500 = 85%)
     uint256 liquidationThresholdBps;
     uint256 totalDeposits;
     uint256 totalBorrowed;
+}
+
+/**
+ * @dev Struct to store lending offer data for matching
+ */
+struct LendingOffer {
+    uint96 listingId;
+    address author;
+    uint256 amount;
+    uint256 minAmount;
+    uint256 maxAmount;
+    uint16 interest;
+    uint256 returnDuration;
+    address tokenAddress;
+    uint256 score;
+}
+
+
+// Helper struct for tracking collateral info during loan creation
+struct CollateralInfo {
+    address token;
+    uint256 amount;
+    uint256 value;
+}
+
+// Updated Pool Loan structure to support multiple collaterals
+struct PoolLoan {
+    address borrower;
+    address borrowToken;
+    uint256 borrowAmount;
+    uint256 interestRate;
+    uint256 lastInterestUpdate;
+    LoanStatus status;
+    address[] collaterals;
+    mapping(address => uint256) collateralAmounts;
+}
+
+/**
+ * @dev Struct to store details about a pool loan.
+ * @param borrower The address of the borrower
+ * @param borrowToken The address of the token being borrowed
+ * @param borrowAmount The amount of tokens being borrowed
+ * @param interestRate The interest rate for the loan
+ * @param lastInterestUpdate The timestamp of the last interest update
+ * @param status The status of the loan
+ * @param collaterals The addresses of the collateral tokens
+ */                                                 
+struct PoolLoanDetails {
+    address borrower;
+    address borrowToken;
+    uint256 borrowAmount;
+    uint256 interestRate;
+    uint256 lastInterestUpdate;
+    LoanStatus status;
+    address[] collaterals;
+}
+
+/**
+ * @dev Struct to store flash loan configuration.
+ * @param isInitialized Whether the flash loan system is initialized
+ * @param feeBps Flash loan fee in basis points (e.g., 9 = 0.09%)
+ * @param totalFlashLoans Total number of flash loans executed
+ * @param totalFeesCollected Total fees collected from flash loans
+ */
+struct FlashLoanConfig {
+    bool isInitialized;
+    uint256 feeBps;
+    uint256 totalFlashLoans;
+    uint256 totalFeesCollected;
 }

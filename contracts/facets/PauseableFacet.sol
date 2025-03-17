@@ -12,28 +12,28 @@ event ProtocolUnPauseTriggered(address indexed pauser, uint256 timestamp);
 
     
     modifier protocolNotPaused() {
-        if (_appStorage.paused) revert ProtocolPaused();
+        if (_appStorage.isPaused) revert ProtocolPaused();
         _;
     }
     
     modifier protocolPaused() {
-        if (!_appStorage.paused) revert ProtocolActive();
+        if (!_appStorage.isPaused) revert ProtocolActive();
         _;
     }
 
     function pauseProtocol() external {
         LibDiamond.enforceIsContractOwner();
-        _appStorage.paused = true;
+        _appStorage.isPaused = true;
         emit ProtocolPauseTriggered(msg.sender, block.timestamp);
     }
 
     function unpauseProtocol() external {
         LibDiamond.enforceIsContractOwner();
-        _appStorage.paused = false;
+        _appStorage.isPaused = false;
         emit ProtocolUnPauseTriggered(msg.sender, block.timestamp);
     }
 
     function isProtocolPaused() external view returns (bool) {
-        return _appStorage.paused;
+        return _appStorage.isPaused;
     }
 }
